@@ -4,9 +4,9 @@
 import requests
 import json
 import os
-#from dotenv import load_dotenv
+from dotenv import load_dotenv
 
-#load_dotenv()  # Загружаем переменные из .env
+load_dotenv()  # Загружаем переменные из .env
 bot_token = os.getenv("BOT_TOKEN")  # Получаем токен
 
 #chat_id = "5169274483" # мой чат
