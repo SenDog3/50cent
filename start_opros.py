@@ -10,7 +10,7 @@ load_dotenv()  # Загружаем переменные из .env
 bot_token = os.getenv("BOT_TOKEN")  # Получаем токен
 
 #chat_id = "5169274483" # мой чат
-#group_id = "-1003425228475" # маленькая группа
+group_id = "-1003425228475" # маленькая группа
 
 base_url = "https://api.telegram.org/bot{}/".format(bot_token)  # Исправлено: https://
 OFFSET_FILE = 'last_update_id.json'
