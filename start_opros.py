@@ -7,7 +7,7 @@ import os
 #from dotenv import load_dotenv
 
 #load_dotenv()  # Загружаем переменные из .env
-#bot_token = os.getenv("BOT_TOKEN")  # Получаем токен
+bot_token = os.getenv("BOT_TOKEN")  # Получаем токен
 
 #chat_id = "5169274483" # мой чат
 #group_id = "-1003425228475" # маленькая группа
