@@ -1,8 +1,8 @@
 import requests
 import time
 
-#TOKEN = OPROS_BOT
-BASE_URL = f'https://api.telegram.org/bot{API_TOKEN}'
+TOKEN = BOT_TOKEN
+BASE_URL = f'https://api.telegram.org/bot{TOKEN}'
 
 def send_message(chat_id, text):
     """Отправляет сообщение в чат"""
