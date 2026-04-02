@@ -1,9 +1,8 @@
 import requests
 import time
 
-# Замените 'YOUR_TOKEN' на реальный токен от BotFather
 #TOKEN = OPROS_BOT
-BASE_URL = f'https://api.telegram.org/bot{TOKEN}'
+BASE_URL = f'https://api.telegram.org/bot{API_TOKEN}'
 
 def send_message(chat_id, text):
     """Отправляет сообщение в чат"""
