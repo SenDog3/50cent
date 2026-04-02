@@ -1,7 +1,10 @@
 import requests
 import time
+import os
 
-TOKEN = BOT_TOKEN
+# Чтение отдельной переменной
+TOKEN = os.getenv('BOT_TOKEN')
+
 BASE_URL = f'https://api.telegram.org/bot{TOKEN}'
 
 def send_message(chat_id, text):
