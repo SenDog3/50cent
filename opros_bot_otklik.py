@@ -31,7 +31,7 @@ def handle_message(message):
     text = message.get('text', '').strip()
 
     if text == '/hi':
-        send_message(chat_id, f'Привет! есть ? {chat_id}')
+        send_message(chat_id, f'Привет! есть? {chat_id}')
     else:
         send_message(chat_id, 'Я понимаю только команду /hi')
 
