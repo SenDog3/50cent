@@ -3,8 +3,8 @@ import time
 import os
 
 # Чтение отдельной переменной
-TOKEN = os.getenv('BOT_TOKEN')
-chat_id = os.getenv('CHAT_ID')
+TOKEN = os.getenv('BOT_TOKEN') #opros
+chat_id = os.getenv('CHAT_ID') #opros
 
 BASE_URL = f'https://api.telegram.org/bot{TOKEN}'
 
@@ -31,7 +31,7 @@ def handle_message(message):
     text = message.get('text', '').strip()
 
     if text == '/hi':
-        send_message(chat_id, f'Привет! есть? {chat_id}')
+        send_message(chat_id, 'Привет!')
     else:
         send_message(chat_id, 'Я понимаю только команду /hi')
 
