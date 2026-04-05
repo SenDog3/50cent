@@ -4,7 +4,7 @@ import os
 
 # Чтение отдельной переменной
 TOKEN = os.getenv('BOT_TOKEN') #opros
-chat_id = os.getenv('CHAT_ID') #opros
+chat_id = os.getenv('CHAT_ID') #opros, ниже значение меняется на полученное id
 
 BASE_URL = f'https://api.telegram.org/bot{TOKEN}'
 
