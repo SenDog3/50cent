@@ -18,6 +18,10 @@ def send_message(chat_id, text):
     response = requests.post(url, json=payload)
     return response.json()
 
+def send_poll(chat_id, text):
+    """Отправляет poll в чат"""
+    pass
+
 def get_updates(offset=None):
     """Получает обновления от Telegram"""
     url = f'{BASE_URL}/getUpdates'
@@ -32,8 +36,12 @@ def handle_message(message):
 
     if text == '/hi':
         send_message(chat_id, 'Привет!')
+        
+    if text == '/send_poll':
+        send_message(chat_id, 'it`ll send poll here!')
+        
     else:
-        send_message(chat_id, 'Я понимаю только команду /hi')
+        send_message(chat_id, 'Я понимаю только команду /hi or /send_poll')
 
 def main():
     """Основная функция запуска бота"""
