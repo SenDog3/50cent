@@ -1,6 +1,8 @@
 import requests
 import time
 import os
+import json
+
 
 # Чтение отдельной переменной
 TOKEN = os.getenv('BOT_TOKEN') #opros
@@ -52,7 +54,7 @@ def handle_message(message):
     text = message.get('text', '').strip()
 
     if text == '/hi':
-        send_message(chat_id, 'Привет!')
+        send_message(chat_id, 'Привет, 17:00!')
         
     elif text == '/send_poll':
         send_message(chat_id, 'It will send a poll here!')
