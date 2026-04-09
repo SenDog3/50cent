@@ -55,9 +55,15 @@ def handle_message(message):
         send_message(chat_id, 'Привет!')
         
     elif text == '/send_poll':
-        send_message(chat_id, 'it`ll send poll here!')
-        send_poll(question="it will?", options=['yes', 'no'], chat_id)
-        
+        send_message(chat_id, 'It will send a poll here!')
+        # Исправленный вызов: передаём аргументы по именам
+        result = send_poll(
+            question="Will it work?",
+            options=['Yes', 'No'],
+            chat_id=chat_id
+        )
+        if not result.get('ok'):
+            send_message(chat_id, f"Ошибка при создании опроса: {result.get('error')}")
     else:
         send_message(chat_id, 'Я понимаю только команду /hi or /send_poll')
         
