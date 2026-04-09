@@ -18,9 +18,26 @@ def send_message(chat_id, text):
     response = requests.post(url, json=payload)
     return response.json()
 
-def send_poll(chat_id, text):
-    """Отправляет poll в чат"""
-    pass
+def send_poll(question, options, chat_id):
+    """Отправляет опрос в чат и возвращает полный ответ API"""
+    url = f'{BASE_URL}/sendPoll'
+    params = {
+        'chat_id': chat_id,
+        'question': question,
+        'options': json.dumps(options),
+        'is_anonymous': False
+    }
+    try:
+        response = requests.post(url, data=params, timeout=10)
+        if response.status_code == 200:
+            print("Опрос успешно отправлен")
+            return response.json()  # Возвращаем полный JSON-ответ API
+        else:
+            print(f"Ошибка отправки опроса: {response.status_code}")
+            return {'ok': False, 'error': f'HTTP {response.status_code}'}
+    except requests.exceptions.RequestException as e:
+        print(f"Ошибка сети при отправке опроса: {e}")
+        return {'ok': False, 'error': str(e)}
 
 def get_updates(offset=None):
     """Получает обновления от Telegram"""
@@ -37,12 +54,13 @@ def handle_message(message):
     if text == '/hi':
         send_message(chat_id, 'Привет!')
         
-    if text == '/send_poll':
+    elif text == '/send_poll':
         send_message(chat_id, 'it`ll send poll here!')
+        send_poll(chat_id, question='it will?', options=['yes', 'no'])
         
     else:
         send_message(chat_id, 'Я понимаю только команду /hi or /send_poll')
-
+        
 def main():
     """Основная функция запуска бота"""
     send_message(chat_id, "опрос_бот запущен (long polling)...")
