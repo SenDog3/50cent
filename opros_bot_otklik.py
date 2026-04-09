@@ -56,7 +56,7 @@ def handle_message(message):
         
     elif text == '/send_poll':
         send_message(chat_id, 'it`ll send poll here!')
-        send_poll(chat_id, question='it will?', options=['yes', 'no'])
+        send_poll(question="it will?", options=['yes', 'no'], chat_id)
         
     else:
         send_message(chat_id, 'Я понимаю только команду /hi or /send_poll')
