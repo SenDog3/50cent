@@ -2,6 +2,7 @@ import requests
 import time
 import os
 import json
+from datetime import datetime
 
 
 # Чтение отдельной переменной
@@ -54,7 +55,7 @@ def handle_message(message):
     text = message.get('text', '').strip()
 
     if text == '/hi':
-        send_message(chat_id, 'Привет, 17:00!')
+        send_message(chat_id, datetime.now().strftime("%H:%M:%S"))
         
     elif text == '/send_poll':
         send_message(chat_id, 'It will send a poll here!')
