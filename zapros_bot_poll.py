@@ -64,10 +64,6 @@ def start_poll_creation(chat_id):
 
 def handle_poll_dialog(chat_id, text):
     """Обрабатывает диалог создания опроса"""
-    if chat_id not in user_states:
-        send_message(chat_id, "Начните создание опроса командой /create_poll")
-        return
-
     state = user_states[chat_id]['state']
 
     if state == 'waiting_question':
@@ -90,7 +86,7 @@ def handle_poll_dialog(chat_id, text):
                 send_message(
                     chat_id,
                     "❌ Нужно минимум 2 варианта ответа!\n"
-                    "Введите ещё варианты или начните заново /create_poll"
+                    "начните заново /create_poll"
                 )
                 del user_states[chat_id]
             else:
