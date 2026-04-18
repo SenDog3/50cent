@@ -2,6 +2,7 @@ import requests
 import os
 import json
 import logging
+import time
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +19,7 @@ BASE_URL = f'https://api.telegram.org/bot{BOT_TOKEN}'
 
 # Хранилище данных пользователей (в реальном проекте используйте БД)
 user_states = {}
+STATE_TIMEOUT = 3600  # 1 час в секундах
 
 def send_message(chat_id, text):
     """Отправляет сообщение в чат"""
@@ -59,10 +61,20 @@ def get_updates(offset=None):
 
 def start_poll_creation(chat_id):
     """Начинает процесс создания опроса"""
-    user_states[chat_id] = {'state': 'waiting_question'}
+    user_states[chat_id] = {
+        'state': 'waiting_question',
+        'created_at': time.time()
+    }
     send_message(chat_id, "📝 Давайте создадим опрос!\n\nВведите вопрос для опроса:")
 
 def handle_poll_dialog(chat_id, text):
+    """ Проверка таймаута """
+    if chat_id in user_states:
+        if time.time() - user_states[chat_id]['created_at'] > STATE_TIMEOUT:
+            del user_states[chat_id]
+            send_message(chat_id, "⏰ Время ожидания истекло. Начните заново /create_poll")
+            return
+    
     """Обрабатывает диалог создания опроса"""
     state = user_states[chat_id]['state']
 
