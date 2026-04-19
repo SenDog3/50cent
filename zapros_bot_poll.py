@@ -150,9 +150,21 @@ def handle_message(message):
             "/create_poll — создать опрос"
         )
 
+def handle_polling(update):
+    """Обработка событий опросов: получение ID проголосовавших и сохранение в файл"""
+    if 'poll_answer' in update:
+        poll_answer = update['poll_answer']
+        user_id = poll_answer['user']['id']
+        poll_id = poll_answer['poll_id']
+        option_ids = poll_answer.get('option_ids', [])
+
+        logger.info(f"Голосование: опрос {poll_id}, пользователь {user_id}, варианты {option_ids}")
+
+        
 def main():
     """Основная функция запуска бота"""
     logger.info("Запуск бота для создания опросов...")
+    # send_message(chat_id, "опрос_бот запущен (long polling)...")
     offset = None
 
     while True:
@@ -164,6 +176,10 @@ def main():
                     offset = update['update_id'] + 1
                     if 'message' in update:
                         handle_message(update['message'])
+                        
+                    # Обрабатываем ответы на опросы
+                    elif 'poll_answer' in update:
+                        handle_polling(update)    
 
             time.sleep(1)
 
@@ -175,5 +191,4 @@ def main():
             time.sleep(5)
 
 if __name__ == '__main__':
-    import time
     main()
