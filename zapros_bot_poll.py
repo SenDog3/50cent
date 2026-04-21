@@ -164,7 +164,7 @@ def handle_polling(update):
 def main():
     """Основная функция запуска бота"""
     logger.info("Запуск бота для создания опросов...")
-    # send_message(chat_id, "опрос_бот запущен (long polling)...")
+    send_message(CHAT_ID, "опрос_бот запущен (long polling)...")
     offset = None
 
     while True:
@@ -174,8 +174,13 @@ def main():
             if updates and updates.get('ok') and updates.get('result'):
                 for update in updates['result']:
                     offset = update['update_id'] + 1
+                    
+                         # Получаем chat_id из обновления, если возможно
+                    chat_id = None
                     if 'message' in update:
-                        handle_message(update['message'])
+                        chat_id = update['message']['chat']['id']
+                        if chat_id == CHAT_ID:
+                            handle_message(update['message'])
                         
                     # Обрабатываем ответы на опросы
                     elif 'poll_answer' in update:
