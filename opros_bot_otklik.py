@@ -87,7 +87,7 @@ def main():
                     chat_id = None
                     if 'message' in update:
                         chat_id = update['message']['chat']['id']
-                        if chat_id == CHAT_ID:
+                        if chat_id == int(CHAT_ID):
                             handle_message(update['message'])
                         
 
