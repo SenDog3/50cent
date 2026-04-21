@@ -7,7 +7,7 @@ from datetime import datetime
 
 # Чтение отдельной переменной
 TOKEN = os.getenv('BOT_TOKEN') #opros
-chat_id = os.getenv('CHAT_ID') #opros, ниже значение меняется на полученное id
+CHAT_ID = os.getenv('CHAT_ID') #opros, ниже значение меняется на полученное id
 
 BASE_URL = f'https://api.telegram.org/bot{TOKEN}'
 
@@ -72,7 +72,7 @@ def handle_message(message):
         
 def main():
     """Основная функция запуска бота"""
-    send_message(chat_id, "опрос_бот запущен (long polling)...")
+    send_message(CHAT_ID, "опрос_бот запущен (long polling)...")
     offset = None
 
     while True:
@@ -82,8 +82,14 @@ def main():
             if updates.get('ok') and updates.get('result'):
                 for update in updates['result']:
                     offset = update['update_id'] + 1
+                    
+                          # Получаем chat_id из обновления, если возможно
+                    chat_id = None
                     if 'message' in update:
-                        handle_message(update['message'])
+                        chat_id = update['message']['chat']['id']
+                        if chat_id == CHAT_ID:
+                            handle_message(update['message'])
+                        
 
             time.sleep(1)  # Пауза между запросами
 
