@@ -174,17 +174,24 @@ def main():
             if updates and updates.get('ok') and updates.get('result'):
                 for update in updates['result']:
                     offset = update['update_id'] + 1
-                    
-                         # Получаем chat_id из обновления, если возможно
+
+                    # Получаем chat_id и type из обновления, если возможно
                     chat_id = None
+                    chat_type = None
+
                     if 'message' in update:
-                        chat_id = update['message']['chat']['id']
-                        if chat_id == CHAT_ID:
-                            handle_message(update['message'])
-                        
+                        message = update['message']
+                        chat = message['chat']
+                        chat_id = chat['id']
+                        chat_type = chat['type']
+
+                        # Обрабатываем только приватные чаты
+                        if chat_type == 'private':
+                            handle_message(message)
+
                     # Обрабатываем ответы на опросы
                     elif 'poll_answer' in update:
-                        handle_polling(update)    
+                        handle_polling(update)
 
             time.sleep(1)
 
