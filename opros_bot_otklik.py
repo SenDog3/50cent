@@ -55,7 +55,7 @@ def handle_message(message):
     text = message.get('text', '').strip()
 
     if text == '/hi':
-        send_message(chat_id, datetime.now().strftime("%H:%M:%S"))
+        send_message(chat_id, datetime.now(ZoneInfo("Europe/Moscow")).strftime("%H:%M:%S"))
         
     elif text == '/send_poll':
         send_message(chat_id, 'It will send a poll here!')
