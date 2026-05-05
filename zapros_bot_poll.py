@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # Получение токенов
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-CHAT_ID = os.getenv('CHAT_ID')  # Можно использовать для стартовых сообщений
+ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебных сообщений
 
 if not BOT_TOKEN:
     raise ValueError("Установите переменную окружения BOT_TOKEN")
@@ -164,7 +164,7 @@ def handle_polling(update):
 def main():
     """Основная функция запуска бота"""
     logger.info("Запуск бота для создания опросов...")
-    send_message(CHAT_ID, "опрос_бот запущен (long polling)...")
+    send_message(ID_MAIN, "опрос_бот запущен (long polling)...")
     offset = None
 
     while True:
