@@ -109,7 +109,10 @@ def handle_poll_dialog(chat_id, text):
                     chat_id=chat_id
                 )
                 if result.get('ok'):
+                    # Отправляем уведомление заказчику опроса
                     send_message(chat_id, "✅ Опрос успешно создан!")
+                    # Отправляем служебное уведомление администратору
+                    send_message(ID_MAIN, "✅ Опрос успешно создан (уведомление администратору)")
                 else:
                     send_message(chat_id, f"❌ Ошибка создания опроса: {result.get('error', 'Unknown')}")
                 del user_states[chat_id]  # Очищаем состояние
