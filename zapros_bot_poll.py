@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 # Получение токенов
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебных сообщений
+GROUP_ID = os.getenv('group_id_main_small') # group_id_main_small  = "-1003425228475" 
 
 if not BOT_TOKEN:
     raise ValueError("Установите переменную окружения BOT_TOKEN")
@@ -32,11 +33,11 @@ def send_message(chat_id, text):
         logger.error(f"Ошибка отправки сообщения: {e}")
         return None
 
-def send_poll(question, options, chat_id):
+def send_poll(question, options):
     """Отправляет опрос в чат"""
     url = f'{BASE_URL}/sendPoll'
     payload = {
-        'chat_id': chat_id,
+        'chat_id': GROUP_ID,
         'question': question,
         'options': json.dumps(options),
         'is_anonymous': False
@@ -105,8 +106,7 @@ def handle_poll_dialog(chat_id, text):
                 # Отправляем опрос
                 result = send_poll(
                     question=user_states[chat_id]['question'],
-                    options=options,
-                    chat_id=chat_id
+                    options=options
                 )
                 if result.get('ok'):
                     # Отправляем уведомление заказчику опроса
