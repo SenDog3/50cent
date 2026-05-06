@@ -13,6 +13,9 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебных сообщений
 GROUP_ID = os.getenv('group_id_main_small') # group_id_main_small  = "-1003425228475" 
 
+with open('/app/users.txt', 'r') as file:
+    user_ids = [line.strip() for line in file]
+
 if not BOT_TOKEN:
     raise ValueError("Установите переменную окружения BOT_TOKEN")
 
@@ -189,7 +192,7 @@ def main():
                         chat_type = chat['type']
 
                         # Обрабатываем только приватные чаты
-                        if chat_type == 'private':
+                        if chat_type == 'private' and chat_id in user_ids:
                             handle_message(message)
 
                     # Обрабатываем ответы на опросы
