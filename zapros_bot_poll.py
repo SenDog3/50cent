@@ -14,7 +14,7 @@ ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебн
 GROUP_ID = os.getenv('group_id_main_small') # group_id_main_small  = "-1003425228475" 
 
 with open('/app/my_folder/users.txt', 'r') as file:
-    user_ids = [line.strip() for line in file]
+    user_ids = [int(line.strip()) for line in file if line.strip()]
 
 if not BOT_TOKEN:
     raise ValueError("Установите переменную окружения BOT_TOKEN")
@@ -195,7 +195,7 @@ def main():
                         if chat_type == 'private' and chat_id in user_ids:
                             handle_message(message)
                         else:     
-                            send_message(chat_id, f"У вас нет доступа к боту. ваш id {chat_id} и {user_ids} и {type(user_ids)} и {type(chat_id)}")
+                            send_message(chat_id, f"У вас нет доступа к боту. ваш id {chat_id} и {user_ids} и {type(user_ids[0])} и {type(chat_id)}")
 
                     # Обрабатываем ответы на опросы
                     elif 'poll_answer' in update:
