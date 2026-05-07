@@ -191,12 +191,10 @@ def main():
                         chat_id = chat['id']
                         chat_type = chat['type']
 
-                        # Обрабатываем только приватные чаты
+                        # Обрабатываем только приватные чаты и допущенные id
                         if chat_type == 'private' and chat_id in user_ids:
                             handle_message(message)
-                        else:     
-                            send_message(chat_id, f"У вас нет доступа к боту. ваш id {chat_id} и {user_ids} и {type(user_ids[0])} и {type(chat_id)}")
-
+                        
                     # Обрабатываем ответы на опросы
                     elif 'poll_answer' in update:
                         handle_polling(update)
