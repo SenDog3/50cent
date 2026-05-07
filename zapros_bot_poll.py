@@ -195,7 +195,7 @@ def main():
                         if chat_type == 'private' and chat_id in user_ids:
                             handle_message(message)
                         else:     
-                            bot.send_message(chat_id, f"У вас нет доступа к боту. ваш id {chat_id} и {user_ids} и {type(user_ids)} и {type(chat_id)}")
+                            send_message(chat_id, f"У вас нет доступа к боту. ваш id {chat_id} и {user_ids} и {type(user_ids)} и {type(chat_id)}")
 
                     # Обрабатываем ответы на опросы
                     elif 'poll_answer' in update:
