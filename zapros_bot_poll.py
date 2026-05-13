@@ -168,7 +168,7 @@ def handle_polling(update):
         logger.info(f"Голосование: опрос {poll_id}, пользователь {user_id}")
 
         # Сохраняем данные в отдельный файл для этого опроса
-        save_vote_to_file(poll_id, user_id, option_ids)
+        save_vote_to_file(poll_id, user_id)
 
 
 def save_vote_to_file(poll_id, user_id):
