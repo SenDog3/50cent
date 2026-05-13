@@ -11,7 +11,9 @@ logger = logging.getLogger(__name__)
 # Получение токенов
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебных сообщений
-GROUP_ID = os.getenv('group_id_main_small') # group_id_main_small  = "-1003425228475" 
+GROUP_ID = os.getenv('group_id_main_small') # group_id_main_small
+VOTES_DIR = '/app/my_folder/votes_by_poll/'  # папка для файлов по опросам
+
 
 with open('/app/my_folder/users.txt', 'r') as file:
     user_ids = [int(line.strip()) for line in file if line.strip()]
@@ -162,10 +164,44 @@ def handle_polling(update):
         poll_answer = update['poll_answer']
         user_id = poll_answer['user']['id']
         poll_id = poll_answer['poll_id']
-        option_ids = poll_answer.get('option_ids', [])
+        
+        logger.info(f"Голосование: опрос {poll_id}, пользователь {user_id}")
 
-        logger.info(f"Голосование: опрос {poll_id}, пользователь {user_id}, варианты {option_ids}")
+        # Сохраняем данные в отдельный файл для этого опроса
+        save_vote_to_file(poll_id, user_id, option_ids)
 
+
+def save_vote_to_file(poll_id, user_id):
+    """Сохраняет данные о голосовании в отдельный файл для каждого опроса"""
+    # Формируем путь к файлу для конкретного опроса
+    file_path = os.path.join(VOTES_DIR, f'poll_{poll_id}.json')
+
+    # Структура данных для записи
+    vote_data = {
+        'user_id': user_id
+    }
+
+    # Проверяем, существует ли файл для этого опроса
+    if os.path.exists(file_path):
+        # Читаем существующие данные
+        with open(file_path, 'r', encoding='utf-8') as f:
+            try:
+                votes = json.load(f)
+            except json.JSONDecodeError:
+                # Если файл пустой или повреждён, начинаем с пустого списка
+                votes = []
+    else:
+        # Создаём новый список для нового опроса
+        votes = []
+
+    # Добавляем новые данные
+    votes.append(vote_data)
+
+    # Записываем обратно в файл
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(votes, f, ensure_ascii=False, indent=2)
+
+    logger.debug(f"Данные о голосовании сохранены: опрос {poll_id}, пользователь {user_id} в файл {file_path}")
         
 def main():
     """Основная функция запуска бота"""
