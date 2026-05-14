@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебных сообщений
 GROUP_ID = os.getenv('group_id_main_small') # group_id_main_small
-VOTES_DIR = '/app/my_folder/votes_by_poll/'  # папка для файлов по опросам
+VOTES_DIR = '/app/data/votes_by_poll/'  # папка для файлов по опросам
 
 
-with open('/app/data/users.txt', 'r') as file:
+with open('/app/data/my_folder/users.txt', 'r') as file:
     user_ids = [int(line.strip()) for line in file if line.strip()]
 
 if not BOT_TOKEN:
