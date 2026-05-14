@@ -15,7 +15,7 @@ GROUP_ID = os.getenv('group_id_main_small') # group_id_main_small
 VOTES_DIR = '/app/my_folder/votes_by_poll/'  # папка для файлов по опросам
 
 
-with open('/app/my_folder/users.txt', 'r') as file:
+with open('/app/data/users.txt', 'r') as file:
     user_ids = [int(line.strip()) for line in file if line.strip()]
 
 if not BOT_TOKEN:
