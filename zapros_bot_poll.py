@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import time
+import threading
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -49,11 +50,51 @@ def send_poll(question, options):
     }
     try:
         response = requests.post(url, data=payload, timeout=10)
-        return response.json()
-    except Exception as e:
-        logger.error(f"Ошибка отправки опроса: {e}")
-        return {'ok': False, 'error': str(e)}
+        poll_result = response.json()
+        
+        if poll_result.get('ok'):
+            poll_message_id = poll_result['result']['message_id']
+            # Планируем закрытие опроса через неделю
+            close_poll_after_week(BOT_TOKEN, poll_message_id, GROUP_ID)
+        else:
+            logger.error(f"API Telegram вернул ошибку: {poll_result}")
 
+        return poll_result
+    
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка сети при отправке опроса: {e}")
+        return {'ok': False, 'error': f'Network error: {str(e)}'}
+    except json.JSONDecodeError as e:
+        logger.error(f"Ошибка декодирования JSON ответа: {e}")
+        return {'ok': False, 'error': f'JSON decode error: {str(e)}'}
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при отправке опроса: {e}")
+        return {'ok': False, 'error': str(e)}
+        
+def close_poll_after_week(bot_token, poll_message_id, chat_id):
+    """Запускает таймер для закрытия опроса через неделю в отдельном потоке"""
+    def _close_poll():
+        logger.info(f"Таймер закрытия опроса {poll_message_id} запущен на 1 неделю")
+        time.sleep(43200)   # пока 12 часов потом 604800)  # 7 дней
+
+        url = f'https://api.telegram.org/bot{bot_token}/stopPoll'
+        payload = {
+            'chat_id': chat_id,
+            'message_id': poll_message_id
+        }
+
+        try:
+            response = requests.post(url, data=payload)
+            response.raise_for_status()
+            logger.info(f"Опрос {poll_message_id} успешно закрыт")
+        except Exception as e:
+            logger.error(f"Ошибка закрытия опроса: {e}")
+
+    # Запускаем в отдельном потоке
+    timer_thread = threading.Thread(target=_close_poll, daemon=True)
+    timer_thread.start()
+
+       
 def get_updates(offset=None):
     """Получает обновления от Telegram"""
     url = f'{BASE_URL}/getUpdates'
