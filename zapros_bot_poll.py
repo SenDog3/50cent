@@ -75,7 +75,7 @@ def close_poll_after_week(bot_token, poll_message_id, chat_id):
     """Запускает таймер для закрытия опроса через неделю в отдельном потоке"""
     def _close_poll():
         logger.info(f"Таймер закрытия опроса {poll_message_id} запущен на 1 неделю")
-        time.sleep(43200)   # пока 12 часов потом 604800)  # 7 дней
+        time.sleep(600)   # пока 10 минут потом 604800)  # 7 дней
 
         url = f'https://api.telegram.org/bot{bot_token}/stopPoll'
         payload = {
