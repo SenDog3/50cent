@@ -15,6 +15,9 @@ ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебн
 GROUP_ID = os.getenv('group_id_main_small') # group_id_main_small
 VOTES_DIR = '/app/data/votes_by_poll/'  # папка для файлов по опросам
 
+# Глобальное хранилище соответствий
+poll_id_to_message_id = {}
+
 # файл кто допущен голосовать, переименовать на более понятное
 with open('/app/data/my_folder/users.txt', 'r') as file:
     user_ids = [int(line.strip()) for line in file if line.strip()]
@@ -56,10 +59,15 @@ def send_poll(question, options):
 
         if poll_result.get('ok'):
             poll_message_id = poll_result['result']['message_id']
-            logger.info(f"Опрос отправлен, message_id: {poll_message_id}")
+             # Сохраняем poll_id из ответа API
+            poll_id = poll_result['result']['poll']['id']
+            
+            # Запоминаем соответствие
+            poll_id_to_message_id[poll_id] = poll_message_id
 
-            # Планируем закрытие опроса через неделю
-            close_poll_after_week(poll_message_id, GROUP_ID)
+            
+            logger.info(f"Опрос отправлен, message_id: {poll_message_id}, poll_id: {poll_id}")
+            close_poll_after_week(poll_id, GROUP_ID)  # Передаём poll_id вместо message_id убрать такой id
             return poll_result
         else:
             logger.error(f"API Telegram вернул ошибку: {poll_result}")
@@ -68,11 +76,18 @@ def send_poll(question, options):
         logger.error(f"Неожиданная ошибка при отправке опроса: {e}")
         return {'ok': False, 'error': str(e)}
         
-def close_poll_after_week(poll_message_id, chat_id):
+def close_poll_after_week(poll_id, chat_id):
     """Запускает таймер для закрытия опроса через неделю в отдельном потоке"""
     def _close_poll():
-        logger.info(f"Таймер закрытия опроса {poll_message_id} запущен на 1 неделю")
+        logger.info(f"Таймер закрытия опроса {poll_id} запущен на 1 неделю")
         time.sleep(600)  # 7 дней = 604 800 секунд
+        
+        # Получаем message_id по poll_id
+        if poll_id not in poll_id_to_message_id:
+            logger.error(f"Не найден message_id для poll_id {poll_id}")
+            return
+
+        poll_message_id = poll_id_to_message_id[poll_id]
 
         url = f'{BASE_URL}/stopPoll'
         payload = {
@@ -86,20 +101,19 @@ def close_poll_after_week(poll_message_id, chat_id):
             result = response.json()
 
             if result.get('ok'):
-                logger.info(f"Опрос {poll_message_id} успешно закрыт")
-                send_poll_results_file(poll_message_id)  # Передаём message_id
+                logger.info(f"Опрос {poll_id} (message_id: {poll_message_id}) успешно закрыт")
+                send_poll_results_file(poll_id)  # Передаём poll_id
             else:
                 logger.error(f"Ошибка закрытия опроса: {result.get('description', 'Unknown error')}")
         except requests.exceptions.RequestException as e:
-            logger.error(f"HTTP ошибка при закрытии опроса {poll_message_id}: {e}")
+            logger.error(f"HTTP ошибка при закрытии опроса {poll_id}: {e}")
         except json.JSONDecodeError as e:
             logger.error(f"Ошибка декодирования JSON ответа: {e}")
         except Exception as e:
-            logger.error(f"Неожиданная ошибка при закрытии опроса {poll_message_id}: {e}")
+            logger.error(f"Неожиданная ошибка при закрытии опроса {poll_id}: {e}")
 
     timer_thread = threading.Thread(target=_close_poll, daemon=True)
     timer_thread.start()
-
     
 def send_poll_results_file(poll_id):
     """Отправляет файл с результатами опроса в указанный чат"""
