@@ -46,7 +46,7 @@ def send_poll(question, options):
         'chat_id': GROUP_ID,
         # убрать такой chat_id
         'question': question,
-        'options': json.dumps(options),
+        'options': options,
         'is_anonymous': False
     }
     
@@ -56,12 +56,10 @@ def send_poll(question, options):
 
         if poll_result.get('ok'):
             poll_message_id = poll_result['result']['message_id']
-
-            # Сохраняем соответствие poll_id → message_id, если нужно
             logger.info(f"Опрос отправлен, message_id: {poll_message_id}")
 
             # Планируем закрытие опроса через неделю
-            close_poll_after_week(poll_message_id, chat_id)
+            close_poll_after_week(poll_message_id, GROUP_ID)
             return poll_result
         else:
             logger.error(f"API Telegram вернул ошибку: {poll_result}")
@@ -105,7 +103,7 @@ def close_poll_after_week(poll_message_id, chat_id):
     
 def send_poll_results_file(poll_id):
     """Отправляет файл с результатами опроса в указанный чат"""
-    file_path = os.path.join(RESULTS_DIR, f'poll_{poll_id}.json')
+    file_path = os.path.join(VOTES_DIR, f'poll_{poll_id}.json')  # Используем VOTES_DIR
 
     if not os.path.exists(file_path):
         logger.warning(f"Файл с результатами опроса {poll_id} не найден: {file_path}")
