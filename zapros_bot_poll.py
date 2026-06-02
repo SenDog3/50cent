@@ -15,7 +15,7 @@ ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебн
 GROUP_ID = os.getenv('group_id_main_small') # group_id_main_small
 VOTES_DIR = '/app/data/votes_by_poll/'  # папка для файлов по опросам
 
-
+# файл кто допущен голосовать, переименовать на более понятное
 with open('/app/data/my_folder/users.txt', 'r') as file:
     user_ids = [int(line.strip()) for line in file if line.strip()]
 
@@ -44,42 +44,40 @@ def send_poll(question, options):
     url = f'{BASE_URL}/sendPoll'
     payload = {
         'chat_id': GROUP_ID,
+        # убрать такой chat_id
         'question': question,
         'options': json.dumps(options),
         'is_anonymous': False
     }
+    
     try:
-        response = requests.post(url, data=payload, timeout=10)
+        response = requests.post(url, json=payload, timeout=10)  # Используем json= вместо data=
         poll_result = response.json()
-        
+
         if poll_result.get('ok'):
             poll_message_id = poll_result['result']['message_id']
+
             # Сохраняем соответствие poll_id → message_id, если нужно
             logger.info(f"Опрос отправлен, message_id: {poll_message_id}")
+
             # Планируем закрытие опроса через неделю
             close_poll_after_week(BOT_TOKEN, poll_message_id, GROUP_ID)
             return poll_result
         else:
             logger.error(f"API Telegram вернул ошибку: {poll_result}")
             return {'ok': False, 'error': f'Telegram API error: {poll_result}'}
-    
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Ошибка сети при отправке опроса: {e}")
-        return {'ok': False, 'error': f'Network error: {str(e)}'}
-    except json.JSONDecodeError as e:
-        logger.error(f"Ошибка декодирования JSON ответа: {e}")
-        return {'ok': False, 'error': f'JSON decode error: {str(e)}'}
     except Exception as e:
         logger.error(f"Неожиданная ошибка при отправке опроса: {e}")
         return {'ok': False, 'error': str(e)}
         
-def close_poll_after_week(bot_token, poll_message_id, chat_id):
+def close_poll_after_week(poll_message_id, chat_id, poll_id):
     """Запускает таймер для закрытия опроса через неделю в отдельном потоке"""
     def _close_poll():
         logger.info(f"Таймер закрытия опроса {poll_message_id} запущен на 1 неделю")
+
         time.sleep(600)   # пока 10 минут потом 604800)  # 7 дней
 
-        url = f'https://api.telegram.org/bot{bot_token}/stopPoll'
+        url = f'{BASE_URL}/stopPoll' # переделал под такой url = f'{BASE_URL}/
         payload = {
             'chat_id': chat_id,
             'message_id': poll_message_id
@@ -89,14 +87,51 @@ def close_poll_after_week(bot_token, poll_message_id, chat_id):
             response = requests.post(url, data=payload)
             response.raise_for_status()
             logger.info(f"Опрос {poll_message_id} успешно закрыт")
+            
+            # Отправляем файл с результатами
+            send_poll_results_file(
+                poll_id=poll_id
+            )
+                
         except Exception as e:
             logger.error(f"Ошибка закрытия опроса: {e}")
 
     # Запускаем в отдельном потоке
     timer_thread = threading.Thread(target=_close_poll, daemon=True)
     timer_thread.start()
+    
+def send_poll_results_file(poll_id):
+    """Отправляет файл с результатами опроса в указанный чат"""
+    file_path = os.path.join(RESULTS_DIR, f'poll_{poll_id}.json')
 
-       
+    if not os.path.exists(file_path):
+        logger.warning(f"Файл с результатами опроса {poll_id} не найден: {file_path}")
+        return
+
+    if not os.access(file_path, os.R_OK):
+        logger.error(f"Нет доступа к файлу с результатами опроса {poll_id}: {file_path}")
+        return
+
+    url = f'{BASE_URL}/sendDocument'
+
+    try:
+        with open(file_path, 'rb') as file:
+            files = {'document': file}
+            data = {'chat_id': ID_MAIN}
+
+            response = requests.post(url, files=files, data=data)
+            response.raise_for_status()
+            logger.info(f"Файл с результатами опроса {poll_id} успешно отправлен в чат {ID_MAIN}")
+    except PermissionError as e:
+        logger.error(f"Ошибка прав доступа к файлу {file_path}: {e}")
+    except OSError as e:
+        logger.error(f"Ошибка ОС при работе с файлом {file_path}: {e}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка при отправке файла опроса {poll_id}: {e}")
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при отправке файла опроса {poll_id}: {e}")
+
+        
 def get_updates(offset=None):
     """Получает обновления от Telegram"""
     url = f'{BASE_URL}/getUpdates'
@@ -245,7 +280,10 @@ def save_vote_to_file(poll_id, user_id):
         json.dump(votes, f, ensure_ascii=False, indent=2)
 
     logger.debug(f"Данные о голосовании сохранены: опрос {poll_id}, пользователь {user_id} в файл {file_path}")
-        
+
+    
+    
+    
 def main():
     """Основная функция запуска бота"""
     logger.info("Запуск бота для создания опросов...")
