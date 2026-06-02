@@ -61,7 +61,7 @@ def send_poll(question, options):
             logger.info(f"Опрос отправлен, message_id: {poll_message_id}")
 
             # Планируем закрытие опроса через неделю
-            close_poll_after_week(BOT_TOKEN, poll_message_id, GROUP_ID)
+            close_poll_after_week(poll_message_id, chat_id)
             return poll_result
         else:
             logger.error(f"API Telegram вернул ошибку: {poll_result}")
