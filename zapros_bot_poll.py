@@ -54,12 +54,14 @@ def send_poll(question, options):
         
         if poll_result.get('ok'):
             poll_message_id = poll_result['result']['message_id']
+            # Сохраняем соответствие poll_id → message_id, если нужно
+            logger.info(f"Опрос отправлен, message_id: {poll_message_id}")
             # Планируем закрытие опроса через неделю
             close_poll_after_week(BOT_TOKEN, poll_message_id, GROUP_ID)
+            return poll_result
         else:
             logger.error(f"API Telegram вернул ошибку: {poll_result}")
-
-        return poll_result
+            return {'ok': False, 'error': f'Telegram API error: {poll_result}'}
     
     except requests.exceptions.RequestException as e:
         logger.error(f"Ошибка сети при отправке опроса: {e}")
