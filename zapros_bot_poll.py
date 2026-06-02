@@ -70,35 +70,38 @@ def send_poll(question, options):
         logger.error(f"Неожиданная ошибка при отправке опроса: {e}")
         return {'ok': False, 'error': str(e)}
         
-def close_poll_after_week(poll_message_id, chat_id, poll_id):
+def close_poll_after_week(poll_message_id, chat_id):
     """Запускает таймер для закрытия опроса через неделю в отдельном потоке"""
     def _close_poll():
         logger.info(f"Таймер закрытия опроса {poll_message_id} запущен на 1 неделю")
+        time.sleep(600)  # 7 дней = 604 800 секунд
 
-        time.sleep(600)   # пока 10 минут потом 604800)  # 7 дней
-
-        url = f'{BASE_URL}/stopPoll' # переделал под такой url = f'{BASE_URL}/
+        url = f'{BASE_URL}/stopPoll'
         payload = {
             'chat_id': chat_id,
             'message_id': poll_message_id
         }
 
         try:
-            response = requests.post(url, data=payload)
+            response = requests.post(url, json=payload)  # Используем json=
             response.raise_for_status()
-            logger.info(f"Опрос {poll_message_id} успешно закрыт")
-            
-            # Отправляем файл с результатами
-            send_poll_results_file(
-                poll_id=poll_id
-            )
-                
-        except Exception as e:
-            logger.error(f"Ошибка закрытия опроса: {e}")
+            result = response.json()
 
-    # Запускаем в отдельном потоке
+            if result.get('ok'):
+                logger.info(f"Опрос {poll_message_id} успешно закрыт")
+                send_poll_results_file(poll_message_id)  # Передаём message_id
+            else:
+                logger.error(f"Ошибка закрытия опроса: {result.get('description', 'Unknown error')}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"HTTP ошибка при закрытии опроса {poll_message_id}: {e}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Ошибка декодирования JSON ответа: {e}")
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при закрытии опроса {poll_message_id}: {e}")
+
     timer_thread = threading.Thread(target=_close_poll, daemon=True)
     timer_thread.start()
+
     
 def send_poll_results_file(poll_id):
     """Отправляет файл с результатами опроса в указанный чат"""
