@@ -80,7 +80,7 @@ def close_poll_after_week(poll_id, chat_id):
     """Запускает таймер для закрытия опроса через неделю в отдельном потоке"""
     def _close_poll():
         logger.info(f"Таймер закрытия опроса {poll_id} запущен на 1 неделю")
-        time.sleep(600)  # 7 дней = 604 800 секунд
+        time.sleep(36000)  # 7 дней = 604 800 секунд
         
         # Получаем message_id по poll_id
         if poll_id not in poll_id_to_message_id:
