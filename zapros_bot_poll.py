@@ -4,7 +4,6 @@ import json
 import logging
 import time
 import threading
-from fpdf import FPDF
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -169,21 +168,19 @@ def send_poll_results_file(poll_id):
         logger.error(f"Ошибка отправки JSON‑файла опроса {poll_id}: {e}")
         return
 
-    # Создаём и отправляем PDF со списком не проголосовавших
-    pdf_output_path = f'/app/data/pdf_results/progul_{poll_id}.pdf'
-    os.makedirs('/app/data/pdf_results', exist_ok=True)  # создаём директорию, если нет
-
-    if generate_missing_voters_pdf(poll_id, pdf_output_path):
-        # Отправляем PDF
+    # Создаём и отправляем TXT со списком не проголосовавших
+    txt_output_path = f'/app/data/txt_results/progul_{poll_id}.txt'
+    os.makedirs('/app/data/txt_results', exist_ok=True)
+    if generate_missing_voters_txt(poll_id, txt_output_path):
         try:
-            with open(pdf_output_path, 'rb') as pdf_file:
-                files = {'document': pdf_file}
-                data = {'chat_id': ID_MAIN, 'caption': 'Список не проголосовавших'}
+            with open(txt_output_path, 'rb') as txt_file:
+                files = {'document': txt_file}
+                data = {'chat_id': ID_MAIN, 'caption': 'Список не проголосовавших (TXT)'}
                 response = requests.post(url, files=files, data=data)
                 response.raise_for_status()
-                logger.info(f"PDF со списком не проголосовавших отправлен для опроса {poll_id}")
+                logger.info(f"TXT со списком не проголосовавших отправлен для опроса {poll_id}")
         except Exception as e:
-            logger.error(f"Ошибка отправки PDF для опроса {poll_id}: {e}")
+            logger.error(f"Ошибка отправки TXT для опроса {poll_id}: {e}")
 
         
 def get_updates(offset=None):
@@ -335,9 +332,9 @@ def save_vote_to_file(poll_id, user_id):
 
     logger.debug(f"Данные о голосовании сохранены: опрос {poll_id}, пользователь {user_id} в файл {file_path}")
 
-def generate_missing_voters_pdf(poll_id: str, output_pdf_path: str) -> bool:
+def generate_missing_voters_txt(poll_id: str, output_pdf_path: str) -> bool:
     """
-    Создаёт PDF‑файл со списком пользователей, которые не проголосовали в опросе.
+    Создаёт TXT‑файл со списком пользователей, которые не проголосовали в опросе.
     """
     # Путь к файлу с результатами голосования
     votes_file_path = os.path.join(VOTES_DIR, f'poll_{poll_id}.json')
@@ -369,29 +366,19 @@ def generate_missing_voters_pdf(poll_id: str, output_pdf_path: str) -> bool:
         missing_ids = all_user_ids - voted_ids_set
         missing_values = [dict_keys_as_int[key] for key in missing_ids]
 
-        # Создаём PDF
-        pdf = FPDF()
-        pdf.add_page()
+        # Создаём содержимое TXT‑файла
+        lines = [
+            f"Список не проголосовавших (опрос {poll_id})",
+            f"Всего не проголосовало: {len(missing_values)} человек",
+            "=" * 40,
+            *missing_values  # распаковываем список
+        ]
 
-        # Подключаем шрифт (укажите полный путь к файлу .ttf)
-        try:
-            pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
-            pdf.set_font('DejaVu', '', 12)
-        except Exception as e:
-            logger.error(f"Ошибка подключения шрифта: {e}. Используем стандартный.")
-            pdf.set_font('Arial', '', 12)  # запасной вариант
+        # Записываем в файл
+        with open(output_txt_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
 
-        # Добавляем заголовок
-        pdf.cell(0, 10, txt=f"Список не проголосовавших (опрос {poll_id})", ln=True, align='C')
-        pdf.ln(10)  # отступ
-
-        # Добавляем список позывных
-        for item in missing_values:
-            pdf.cell(0, 10, txt=item, ln=True)
-
-        # Сохраняем PDF
-        pdf.output(output_pdf_path)
-        logger.info(f"PDF успешно создан: {output_pdf_path}, не проголосовало: {len(missing_values)} человек")
+        logger.info(f"TXT успешно создан: {output_txt_path}, не проголосовало: {len(missing_values)} человек")
         return True
 
     except FileNotFoundError as e:
@@ -401,7 +388,7 @@ def generate_missing_voters_pdf(poll_id: str, output_pdf_path: str) -> bool:
         logger.error(f"Ошибка чтения JSON: {e}")
         return False
     except Exception as e:
-        logger.error(f"Неожиданная ошибка при создании PDF: {e}")
+        logger.error(f"Неожиданная ошибка при создании TXT: {e}")
         return False
     
     
