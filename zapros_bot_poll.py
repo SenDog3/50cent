@@ -14,6 +14,7 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебных сообщений
 GROUP_ID = os.getenv('group_id_main_small') # group_id_маленькая_моя
 VOTES_DIR = '/app/data/votes_by_poll/'  # папка для файлов по опросам
+ACTUAL_IDS_PATH = '/app/data/pozyvn/dict_id_pozyv.txt'
 
 # Глобальное хранилище соответствий
 poll_id_to_message_id = {}
@@ -80,8 +81,8 @@ def close_poll_after_week(poll_id, chat_id):
     """Запускает таймер для закрытия опроса через неделю в отдельном потоке"""
     def _close_poll():
         logger.info(f"Таймер закрытия опроса {poll_id} запущен на 1 неделю")
-        time.sleep(600)  # 7 дней = 604 800 секунд
-        
+        time.sleep(300)  # 5 минут временно для отладки, потом перепишу
+
         # Получаем message_id по poll_id
         if poll_id not in poll_id_to_message_id:
             logger.error(f"Не найден message_id для poll_id {poll_id}")
@@ -96,13 +97,14 @@ def close_poll_after_week(poll_id, chat_id):
         }
 
         try:
-            response = requests.post(url, json=payload)  # Используем json=
+            response = requests.post(url, json=payload)
             response.raise_for_status()
             result = response.json()
 
             if result.get('ok'):
                 logger.info(f"Опрос {poll_id} (message_id: {poll_message_id}) успешно закрыт")
-                send_poll_results_file(poll_id)  # Передаём poll_id
+                send_poll_results_file(poll_id)  # отправка результатов
+                send_post_closure_notifications(poll_id)  # уведомления после закрытия
             else:
                 logger.error(f"Ошибка закрытия опроса: {result.get('description', 'Unknown error')}")
         except requests.exceptions.RequestException as e:
@@ -114,39 +116,7 @@ def close_poll_after_week(poll_id, chat_id):
 
     timer_thread = threading.Thread(target=_close_poll, daemon=True)
     timer_thread.start()
-    
-def send_poll_results_file(poll_id):
-    """Отправляет файл с результатами опроса в указанный чат"""
-    file_path = os.path.join(VOTES_DIR, f'poll_{poll_id}.json')  # Используем VOTES_DIR
-
-    if not os.path.exists(file_path):
-        logger.warning(f"Файл с результатами опроса {poll_id} не найден: {file_path}")
-        return
-
-    if not os.access(file_path, os.R_OK):
-        logger.error(f"Нет доступа к файлу с результатами опроса {poll_id}: {file_path}")
-        return
-
-    url = f'{BASE_URL}/sendDocument'
-
-    try:
-        with open(file_path, 'rb') as file:
-            files = {'document': file}
-            data = {'chat_id': ID_MAIN}
-
-            response = requests.post(url, files=files, data=data)
-            response.raise_for_status()
-            logger.info(f"Файл с результатами опроса {poll_id} успешно отправлен в чат {ID_MAIN}")
-    except PermissionError as e:
-        logger.error(f"Ошибка прав доступа к файлу {file_path}: {e}")
-    except OSError as e:
-        logger.error(f"Ошибка ОС при работе с файлом {file_path}: {e}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Ошибка при отправке файла опроса {poll_id}: {e}")
-    except Exception as e:
-        logger.error(f"Неожиданная ошибка при отправке файла опроса {poll_id}: {e}")
-
-        
+     
 def send_poll_results_file(poll_id):
     """Отправляет файл с результатами опроса в указанный чат"""
     json_file_path = os.path.join(VOTES_DIR, f'poll_{poll_id}.json')
@@ -181,7 +151,76 @@ def send_poll_results_file(poll_id):
                 logger.info(f"TXT со списком не проголосовавших отправлен для опроса {poll_id}")
         except Exception as e:
             logger.error(f"Ошибка отправки TXT для опроса {poll_id}: {e}")
+            
+def send_post_closure_notifications(poll_id: str):
+    """
+    Отправляет уведомления пользователям, которые не проголосовали после закрытия опроса.
+    """
+    logger.info(f"Отправка уведомлений о непроголосовавших для опроса {poll_id}")
 
+    try:
+        missing_users = get_missing_voters_list(poll_id)
+
+        if not missing_users:
+            logger.info(f"Все пользователи проголосовали в опросе {poll_id}, уведомления не требуются")
+            return
+
+        logger.info(f"Отправляем уведомления {len(missing_users)} пользователям для опроса {poll_id}")
+
+        message_text = (
+            f"📣 Опрос #{poll_id} завершён!\n\n"
+            f"К сожалению, вы не приняли участие в голосовании.\n\n"
+            "Результаты опроса будут опубликованы позже.\n"
+            "В следующий раз не пропустите возможность высказать своё мнение!"
+        )
+
+        sent_count = 0
+        failed_count = 0
+
+        for user_id in missing_users:
+            try:
+                send_message(user_id, message_text)
+                sent_count += 1
+                time.sleep(0.1)  # задержка между сообщениями
+            except Exception as e:
+                logger.error(f"Ошибка отправки уведомления пользователю {user_id}: {e}")
+                failed_count += 1
+
+        logger.info(
+            f"Уведомления отправлены: успешно {sent_count}, "
+            f"ошибок {failed_count} для опроса {poll_id}"
+        )
+    except Exception as e:
+        logger.error(f"Критическая ошибка при отправке уведомлений для опроса {poll_id}: {e}")
+
+def get_missing_voters_list(poll_id: str) -> list:
+    """
+    Получает список ID пользователей, которые не проголосовали в указанном опросе.
+    Returns:
+        list: список ID пользователей.
+    """
+    votes_file_path = os.path.join(VOTES_DIR, f'poll_{poll_id}.json')
+    actual_ids_path = ACTUAL_IDS_PATH
+
+    try:
+        with open(actual_ids_path, 'r', encoding='utf-8') as file:
+            dict_pozyvn = json.load(file)
+        dict_keys_as_int = {int(key): value for key, value in dict_pozyvn.items()}
+
+        if not os.path.exists(votes_file_path):
+            return list(dict_keys_as_int.keys())
+
+        with open(votes_file_path, 'r', encoding='utf-8') as file:
+            votes_data = json.load(file)
+        voted_user_ids = [item['user_id'] for item in votes_data]
+
+        all_user_ids = set(dict_keys_as_int.keys())
+        voted_ids_set = set(voted_user_ids)
+        missing_ids = all_user_ids - voted_ids_set
+        return list(missing_ids)
+    except Exception as e:
+        logger.error(f"Ошибка получения списка не проголосовавших для опроса {poll_id}: {e}")
+        return []
         
 def get_updates(offset=None):
     """Получает обновления от Telegram"""
@@ -333,64 +372,36 @@ def save_vote_to_file(poll_id, user_id):
     logger.debug(f"Данные о голосовании сохранены: опрос {poll_id}, пользователь {user_id} в файл {file_path}")
 
 def generate_missing_voters_txt(poll_id: str, output_txt_path: str) -> bool:
-    """
-    Создаёт TXT‑файл со списком пользователей, которые не проголосовали в опросе.
-    """
-    # Путь к файлу с результатами голосования
-    votes_file_path = os.path.join(VOTES_DIR, f'poll_{poll_id}.json')
-    # Путь к актуальному списку пользователей с позывными
-    actual_ids_path = '/app/data/pozyvn/dict_id_pozyv.txt'
-
+    """Создаёт TXT‑файл со списком пользователей, которые не проголосовали в опросе."""
     try:
-        # Читаем актуальный список пользователей
-        with open(actual_ids_path, 'r', encoding='utf-8') as file:
-            dict_pozyvn = json.load(file)
-
-        # Преобразуем ключи в целые числа
-        dict_keys_as_int = {int(key): value for key, value in dict_pozyvn.items()}
-
-        # Читаем данные о проголосовавших
-        if not os.path.exists(votes_file_path):
-            logger.warning(f"Файл с голосами опроса {poll_id} не найден: {votes_file_path}")
+        missing_ids = get_missing_voters_list(poll_id)
+        if not missing_ids:
+            logger.info(f"Все проголосовали в опросе {poll_id}, TXT не создаётся")
             return False
 
-        with open(votes_file_path, 'r', encoding='utf-8') as file:
-            votes_data = json.load(file)
-
-        # Извлекаем ID проголосовавших
-        voted_user_ids = [item['user_id'] for item in votes_data]
-
-        # Находим тех, кто не проголосовал
-        all_user_ids = set(dict_keys_as_int.keys())
-        voted_ids_set = set(voted_user_ids)
-        missing_ids = all_user_ids - voted_ids_set
+        # Читаем позывные для ID
+        actual_ids_path = ACTUAL_IDS_PATH
+        with open(actual_ids_path, 'r', encoding='utf-8') as file:
+            dict_pozyvn = json.load(file)
+        dict_keys_as_int = {int(key): value for key, value in dict_pozyvn.items()}
         missing_values = [dict_keys_as_int[key] for key in missing_ids]
 
-        # Создаём содержимое TXT‑файла
         lines = [
             f"Список не проголосовавших (опрос {poll_id})",
             f"Всего не проголосовало: {len(missing_values)} человек",
             "=" * 40,
-            *missing_values  # распаковываем список
+            *missing_values
         ]
 
-        # Записываем в файл
         with open(output_txt_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
 
         logger.info(f"TXT успешно создан: {output_txt_path}, не проголосовало: {len(missing_values)} человек")
         return True
-
-    except FileNotFoundError as e:
-        logger.error(f"Файл не найден: {e}")
-        return False
-    except json.JSONDecodeError as e:
-        logger.error(f"Ошибка чтения JSON: {e}")
-        return False
     except Exception as e:
-        logger.error(f"Неожиданная ошибка при создании TXT: {e}")
+        logger.error(f"Ошибка при создании TXT для опроса {poll_id}: {e}")
         return False
-    
+
     
     
 def main():
@@ -402,6 +413,9 @@ def main():
     while True:
         try:
             updates = get_updates(offset)
+            if updates is None:
+                time.sleep(5)  # пауза при ошибке получения обновлений
+                continue
 
             if updates and updates.get('ok') and updates.get('result'):
                 for update in updates['result']:
