@@ -4,6 +4,7 @@ import json
 import logging
 import time
 import threading
+from fpdf import FPDF
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 # Получение токенов
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебных сообщений
-GROUP_ID = os.getenv('group_id_list') # group_id_list
+GROUP_ID = os.getenv('group_id_main_small') # group_id_маленькая_моя
 VOTES_DIR = '/app/data/votes_by_poll/'  # папка для файлов по опросам
 
 # Глобальное хранилище соответствий
@@ -80,7 +81,7 @@ def close_poll_after_week(poll_id, chat_id):
     """Запускает таймер для закрытия опроса через неделю в отдельном потоке"""
     def _close_poll():
         logger.info(f"Таймер закрытия опроса {poll_id} запущен на 1 неделю")
-        time.sleep(36000)  # 7 дней = 604 800 секунд
+        time.sleep(600)  # 7 дней = 604 800 секунд
         
         # Получаем message_id по poll_id
         if poll_id not in poll_id_to_message_id:
@@ -145,6 +146,44 @@ def send_poll_results_file(poll_id):
         logger.error(f"Ошибка при отправке файла опроса {poll_id}: {e}")
     except Exception as e:
         logger.error(f"Неожиданная ошибка при отправке файла опроса {poll_id}: {e}")
+
+        
+def send_poll_results_file(poll_id):
+    """Отправляет файл с результатами опроса в указанный чат"""
+    json_file_path = os.path.join(VOTES_DIR, f'poll_{poll_id}.json')
+
+    if not os.path.exists(json_file_path):
+        logger.warning(f"Файл с результатами опроса {poll_id} не найден: {json_file_path}")
+        return
+
+    # Отправляем JSON‑файл с голосами
+    url = f'{BASE_URL}/sendDocument'
+    try:
+        with open(json_file_path, 'rb') as file:
+            files = {'document': file}
+            data = {'chat_id': ID_MAIN}
+            response = requests.post(url, files=files, data=data)
+            response.raise_for_status()
+            logger.info(f"JSON с результатами опроса {poll_id} отправлен в чат {ID_MAIN}")
+    except Exception as e:
+        logger.error(f"Ошибка отправки JSON‑файла опроса {poll_id}: {e}")
+        return
+
+    # Создаём и отправляем PDF со списком не проголосовавших
+    pdf_output_path = f'/app/data/pdf_results/progul_{poll_id}.pdf'
+    os.makedirs('/app/data/pdf_results', exist_ok=True)  # создаём директорию, если нет
+
+    if generate_missing_voters_pdf(poll_id, pdf_output_path):
+        # Отправляем PDF
+        try:
+            with open(pdf_output_path, 'rb') as pdf_file:
+                files = {'document': pdf_file}
+                data = {'chat_id': ID_MAIN, 'caption': 'Список не проголосовавших'}
+                response = requests.post(url, files=files, data=data)
+                response.raise_for_status()
+                logger.info(f"PDF со списком не проголосовавших отправлен для опроса {poll_id}")
+        except Exception as e:
+            logger.error(f"Ошибка отправки PDF для опроса {poll_id}: {e}")
 
         
 def get_updates(offset=None):
@@ -296,6 +335,74 @@ def save_vote_to_file(poll_id, user_id):
 
     logger.debug(f"Данные о голосовании сохранены: опрос {poll_id}, пользователь {user_id} в файл {file_path}")
 
+def generate_missing_voters_pdf(poll_id: str, output_pdf_path: str) -> bool:
+    """
+    Создаёт PDF‑файл со списком пользователей, которые не проголосовали в опросе.
+    """
+    # Путь к файлу с результатами голосования
+    votes_file_path = os.path.join(VOTES_DIR, f'poll_{poll_id}.json')
+    # Путь к актуальному списку пользователей с позывными
+    actual_ids_path = '/app/data/pozyvn/dict_id_pozyv.txt'
+
+    try:
+        # Читаем актуальный список пользователей
+        with open(actual_ids_path, 'r', encoding='utf-8') as file:
+            dict_pozyvn = json.load(file)
+
+        # Преобразуем ключи в целые числа
+        dict_keys_as_int = {int(key): value for key, value in dict_pozyvn.items()}
+
+        # Читаем данные о проголосовавших
+        if not os.path.exists(votes_file_path):
+            logger.warning(f"Файл с голосами опроса {poll_id} не найден: {votes_file_path}")
+            return False
+
+        with open(votes_file_path, 'r', encoding='utf-8') as file:
+            votes_data = json.load(file)
+
+        # Извлекаем ID проголосовавших
+        voted_user_ids = [item['user_id'] for item in votes_data]
+
+        # Находим тех, кто не проголосовал
+        all_user_ids = set(dict_keys_as_int.keys())
+        voted_ids_set = set(voted_user_ids)
+        missing_ids = all_user_ids - voted_ids_set
+        missing_values = [dict_keys_as_int[key] for key in missing_ids]
+
+        # Создаём PDF
+        pdf = FPDF()
+        pdf.add_page()
+
+        # Подключаем шрифт (укажите полный путь к файлу .ttf)
+        try:
+            pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
+            pdf.set_font('DejaVu', '', 12)
+        except Exception as e:
+            logger.error(f"Ошибка подключения шрифта: {e}. Используем стандартный.")
+            pdf.set_font('Arial', '', 12)  # запасной вариант
+
+        # Добавляем заголовок
+        pdf.cell(0, 10, txt=f"Список не проголосовавших (опрос {poll_id})", ln=True, align='C')
+        pdf.ln(10)  # отступ
+
+        # Добавляем список позывных
+        for item in missing_values:
+            pdf.cell(0, 10, txt=item, ln=True)
+
+        # Сохраняем PDF
+        pdf.output(output_pdf_path)
+        logger.info(f"PDF успешно создан: {output_pdf_path}, не проголосовало: {len(missing_values)} человек")
+        return True
+
+    except FileNotFoundError as e:
+        logger.error(f"Файл не найден: {e}")
+        return False
+    except json.JSONDecodeError as e:
+        logger.error(f"Ошибка чтения JSON: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при создании PDF: {e}")
+        return False
     
     
     
