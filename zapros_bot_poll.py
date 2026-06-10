@@ -332,7 +332,7 @@ def save_vote_to_file(poll_id, user_id):
 
     logger.debug(f"Данные о голосовании сохранены: опрос {poll_id}, пользователь {user_id} в файл {file_path}")
 
-def generate_missing_voters_txt(poll_id: str, output_pdf_path: str) -> bool:
+def generate_missing_voters_txt(poll_id: str, output_txt_path: str) -> bool:
     """
     Создаёт TXT‑файл со списком пользователей, которые не проголосовали в опросе.
     """
