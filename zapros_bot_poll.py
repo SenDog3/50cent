@@ -43,32 +43,29 @@ def send_message(chat_id, text):
         logger.error(f"Ошибка отправки сообщения: {e}")
         return None
 
-def send_poll(question, options):
-    """Отправляет опрос в чат"""
+def send_poll(question, options, duration_days):
+    """Отправляет опрос в чат с указанием срока действия"""
     url = f'{BASE_URL}/sendPoll'
     payload = {
         'chat_id': GROUP_ID,
-        # убрать такой chat_id
         'question': question,
         'options': options,
         'is_anonymous': False
     }
-    
+
     try:
-        response = requests.post(url, json=payload, timeout=10)  # Используем json= вместо data=
+        response = requests.post(url, json=payload, timeout=10)
         poll_result = response.json()
 
         if poll_result.get('ok'):
             poll_message_id = poll_result['result']['message_id']
-             # Сохраняем poll_id из ответа API
             poll_id = poll_result['result']['poll']['id']
-            
+
             # Запоминаем соответствие
             poll_id_to_message_id[poll_id] = poll_message_id
 
-            
             logger.info(f"Опрос отправлен, message_id: {poll_message_id}, poll_id: {poll_id}")
-            close_poll_after_week(poll_id, GROUP_ID)  # Передаём poll_id вместо message_id убрать такой id
+            close_poll_after_duration(poll_id, GROUP_ID, duration_days)  # Используем новый таймер
             return poll_result
         else:
             logger.error(f"API Telegram вернул ошибку: {poll_result}")
@@ -77,11 +74,13 @@ def send_poll(question, options):
         logger.error(f"Неожиданная ошибка при отправке опроса: {e}")
         return {'ok': False, 'error': str(e)}
         
-def close_poll_after_week(poll_id, chat_id):
-    """Запускает таймер для закрытия опроса через неделю в отдельном потоке"""
+def close_poll_after_duration(poll_id, chat_id, duration_days):
+    """Запускает таймер для закрытия опроса через указанное количество дней"""
     def _close_poll():
-        logger.info(f"Таймер закрытия опроса {poll_id} запущен на 1 неделю")
-        time.sleep(300)  # 5 минут временно для отладки, потом перепишу
+        # Переводим дни в секунды
+        duration_seconds = duration_days * 24 * 60 * 60
+        logger.info(f"Таймер закрытия опроса {poll_id} запущен на {duration_days} дней ({duration_seconds} секунд)")
+        time.sleep(duration_seconds)  # Ждём указанное количество дней
 
         # Получаем message_id по poll_id
         if poll_id not in poll_id_to_message_id:
@@ -168,10 +167,10 @@ def send_post_closure_notifications(poll_id: str):
         logger.info(f"Отправляем уведомления {len(missing_users)} пользователям для опроса {poll_id}")
 
         message_text = (
-            f"📣 Опрос #{poll_id} завершён!\n\n"
-            f"К сожалению, вы не приняли участие в голосовании.\n\n"
-            "Результаты опроса будут опубликованы позже.\n"
-            "В следующий раз не пропустите возможность высказать своё мнение!"
+            f"📣 Опрос завершён!\n\n"
+            f"К сожалению, вы не приняли участие в голосовании в moto.\n\n"
+            "Это нарушение правил.\n"
+            "Напишите админам!"
         )
 
         sent_count = 0
@@ -237,27 +236,29 @@ def start_poll_creation(chat_id):
     """Начинает процесс создания опроса"""
     user_states[chat_id] = {
         'state': 'waiting_question',
-        'created_at': time.time()
+        'created_at': time.time(),
+        'question': None,
+        'options': [],
+        'duration_days': None  # новый параметр
     }
     send_message(chat_id, "📝 Давайте создадим опрос!\n\nВведите вопрос для опроса:")
 
 def handle_poll_dialog(chat_id, text):
-    """ Проверка таймаута """
-    if chat_id in user_states:
-        if time.time() - user_states[chat_id]['created_at'] > STATE_TIMEOUT:
-            del user_states[chat_id]
-            send_message(chat_id, "⏰ Время ожидания истекло. Начните заново /create_poll")
-            return
-    
     """Обрабатывает диалог создания опроса"""
+    if chat_id not in user_states:
+        return
+
+    # Проверка таймаута
+    if time.time() - user_states[chat_id]['created_at'] > STATE_TIMEOUT:
+        del user_states[chat_id]
+        send_message(chat_id, "⏰ Время ожидания истекло. Начните заново /create_poll")
+        return
+
     state = user_states[chat_id]['state']
 
     if state == 'waiting_question':
-        user_states[chat_id].update({
-            'question': text,
-            'options': [],
-            'state': 'waiting_options'
-        })
+        user_states[chat_id]['question'] = text
+        user_states[chat_id]['state'] = 'waiting_options'
         send_message(
             chat_id,
             f"Отлично! Вопрос: \"{text}\"\n\n"
@@ -272,23 +273,16 @@ def handle_poll_dialog(chat_id, text):
                 send_message(
                     chat_id,
                     "❌ Нужно минимум 2 варианта ответа!\n"
-                    "начните заново /create_poll"
+                    "Начните заново /create_poll"
                 )
                 del user_states[chat_id]
             else:
-                # Отправляем опрос
-                result = send_poll(
-                    question=user_states[chat_id]['question'],
-                    options=options
+                user_states[chat_id]['state'] = 'waiting_duration'
+                send_message(
+                    chat_id,
+                    f"Опрос содержит {len(options)} вариантов.\n\n"
+                    "Укажите срок действия опроса в днях (например: 7):"
                 )
-                if result.get('ok'):
-                    # Отправляем уведомление заказчику опроса
-                    send_message(chat_id, "✅ Опрос успешно создан!")
-                    # Отправляем служебное уведомление администратору
-                    send_message(ID_MAIN, "✅ Опрос успешно создан (уведомление администратору)")
-                else:
-                    send_message(chat_id, f"❌ Ошибка создания опроса: {result.get('error', 'Unknown')}")
-                del user_states[chat_id]  # Очищаем состояние
         else:
             # Добавляем новый вариант ответа
             user_states[chat_id]['options'].append(text)
@@ -298,6 +292,36 @@ def handle_poll_dialog(chat_id, text):
                 f"Текущие варианты ({len(user_states[chat_id]['options'])}):\n" +
                 "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(user_states[chat_id]['options'])]) +
                 "\n\nПродолжайте вводить варианты или напишите \"готово\""
+            )
+
+    elif state == 'waiting_duration':
+        try:
+            duration_days = int(text.strip())
+            if duration_days <= 0:
+                raise ValueError("Срок должен быть положительным числом")
+
+            user_states[chat_id]['duration_days'] = duration_days
+
+            # Отправляем опрос
+            result = send_poll(
+                question=user_states[chat_id]['question'],
+                options=user_states[chat_id]['options'],
+                duration_days=duration_days
+            )
+            if result.get('ok'):
+                # Отправляем уведомление заказчику опроса
+                send_message(chat_id, f"✅ Опрос успешно создан! Срок действия: {duration_days} дней")
+                # Отправляем служебное уведомление администратору
+                send_message(ID_MAIN, f"✅ Опрос успешно создан (срок: {duration_days} дней)")
+            else:
+                send_message(chat_id, f"❌ Ошибка создания опроса: {result.get('error', 'Unknown')}")
+
+            del user_states[chat_id]  # Очищаем состояние
+
+        except ValueError:
+            send_message(
+                chat_id,
+                "❌ Пожалуйста, введите корректное число дней (положительное целое число):"
             )
 
 def handle_message(message):
