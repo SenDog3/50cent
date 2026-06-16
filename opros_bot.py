@@ -22,7 +22,7 @@ ID_MAIN = os.getenv('ID_MAIN')  # для служебных сообщений
 GROUP_ID = os.getenv('group_id_main_small')  # group_id_маленькая_моя
 
 # Путь для хранения данных (user_id: позывной)
-DATA_FILE = '/app/shared/pozyvn/user_callsigns.json'
+DATA_FILE = '/app/data/pozyvn/user_callsigns.json'
 
 # Проверка обязательных переменных окружения
 if not BOT_TOKEN:
