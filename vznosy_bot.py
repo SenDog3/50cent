@@ -16,9 +16,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from dotenv import load_dotenv
-load_dotenv()
-
 # Получение токенов из переменных окружения
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')  # для служебных сообщений
