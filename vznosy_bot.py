@@ -190,8 +190,8 @@ def main():
                     offset = update['update_id'] + 1
 
                     if 'message' in update:
-                message = update['message']
-                handle_message(message)
+                        message = update['message']
+                        handle_message(message)
 
             time.sleep(1)
 
