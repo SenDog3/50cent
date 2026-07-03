@@ -19,10 +19,9 @@ logger = logging.getLogger(__name__)
 # Получение токенов и настроек из переменных окружения
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')  # для служебных сообщений
-GROUP_ID = os.getenv('group_id_main_small')  # group_id_маленькая_моя
 
 # Путь для хранения данных (user_id: позывной)
-DATA_FILE = '/app/data/pozyvn/user_callsigns.json'
+DATA_FILE = '/app/data/pozyvn/moto_pozyvnye.json'
 
 # Проверка обязательных переменных окружения
 if not BOT_TOKEN:
@@ -100,9 +99,10 @@ def handle_message(message):
             if ID_MAIN:
                 send_message(
                     ID_MAIN,
+            f"Позывной: {callsign}\n"
             f"📝 Новый позывной добавлен:\n"
-            f"User ID: {user_id}\n"
-            f"Позывной: {callsign}"
+            f"User ID: {user_id}"
+            
         )
     else:
         # Если сообщение не соответствует формату позывного
