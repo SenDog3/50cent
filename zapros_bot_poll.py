@@ -12,9 +12,10 @@ logger = logging.getLogger(__name__)
 # Получение токенов
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебных сообщений
-GROUP_ID = os.getenv('group_id_main_small') # group_id_маленькая_моя
+GROUP_ID = os.getenv('group_id_moto') # group_id moto
 VOTES_DIR = '/app/data/votes_by_poll/'  # папка для файлов по опросам
 ACTUAL_IDS_PATH = '/app/data/pozyvn/dict_id_pozyv.txt'
+thread_id = 42  # ID ветки (message_thread_id) для форума/супергруппы
 
 # Глобальное хранилище соответствий
 poll_id_to_message_id = {}
@@ -50,7 +51,8 @@ def send_poll(question, options, duration_days):
         'chat_id': GROUP_ID,
         'question': question,
         'options': options,
-        'is_anonymous': False
+        'is_anonymous': False,
+        'message_thread_id': thread_id
     }
 
     try:
@@ -92,7 +94,9 @@ def close_poll_after_duration(poll_id, chat_id, duration_days):
         url = f'{BASE_URL}/stopPoll'
         payload = {
             'chat_id': chat_id,
-            'message_id': poll_message_id
+            'message_id': poll_message_id,
+            'message_thread_id': thread_id 
+        
         }
 
         try:
@@ -155,7 +159,7 @@ def send_post_closure_notifications(poll_id: str):
     """
     Отправляет уведомления пользователям, которые не проголосовали после закрытия опроса.
     """
-    logger.info(f"Отправка уведомлений о непроголосовавших для опроса {poll_id}")
+    logger.info(f"Отправка уведомлений о неголосовавших для опроса {poll_id}")
 
     try:
         missing_users = get_missing_voters_list(poll_id)
@@ -170,7 +174,7 @@ def send_post_closure_notifications(poll_id: str):
             f"📣 Опрос завершён!\n\n"
             f"К сожалению, вы не приняли участие в голосовании в moto.\n\n"
             "Это нарушение правил.\n"
-            "Напишите админам!"
+            "Напишите админу Седому!"
         )
 
         sent_count = 0
