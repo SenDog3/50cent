@@ -20,8 +20,8 @@ thread_id = 42  # ID ветки (message_thread_id) для форума/супе
 # Глобальное хранилище соответствий
 poll_id_to_message_id = {}
 
-# файл кто допущен голосовать, переименовать на более понятное
-with open('/app/data/my_folder/users_for_poll.txt', 'r') as file:
+# файл кто допущен голосовать
+with open('/app/data/admins_for_create_poll.txt', 'r') as file:
     user_ids = [int(line.strip()) for line in file if line.strip()]
 
 if not BOT_TOKEN:
