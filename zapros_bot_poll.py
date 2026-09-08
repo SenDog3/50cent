@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # Получение токенов
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')  # использовать для служебных сообщений
-GROUP_ID = os.getenv(' group_id_main_small') # group_id 
+GROUP_ID = os.getenv('group_id_main_small') # group_id 
 VOTES_DIR = '/app/data/votes_by_poll/'  # папка для файлов по опросам
 ACTUAL_IDS_PATH = '/app/data/pozyvn/dict_id_pozyv.txt'
 thread_id = 42  # ID ветки (message_thread_id) для форума/супергруппы
