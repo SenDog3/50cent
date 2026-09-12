@@ -433,6 +433,51 @@ def generate_missing_voters_txt(poll_id: str, output_txt_path: str) -> bool:
     
     
 def main():
+    
+    
+    import os
+    import psycopg2
+    
+    DATABASE_URL = os.getenv("DATABASE_URL")
+
+    if not DATABASE_URL:
+        print("❌ ОШИБКА: Переменная DATABASE_URL не найдена!")
+    else:
+        print("✅ Переменная найдена, пробуем подключиться...")
+
+        try:
+            # 1. Подключаемся
+            conn = psycopg2.connect(DATABASE_URL)
+            cur = conn.cursor()
+        
+            # 2. Пишем в базу
+            key = "bot_check_v1"
+            value = "Hello from Bothost bot!"
+        
+            cur.execute("""
+                INSERT INTO shared_settings (key, value)
+                VALUES (%s, %s)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP;
+            """, (key, value))
+            conn.commit()
+            print(f"✅ Записали: {key} = {value}")
+        
+            # 3. Читаем обратно
+            cur.execute("SELECT key, value, updated_at FROM shared_settings WHERE key = %s", (key,))
+            row = cur.fetchone()
+        
+            if row:
+                print(f"✅ ПРОШЛО! Прочитали из базы: {row}")
+            else:
+                print("❌ Не смогли прочитать строку")
+            
+            cur.close()
+            conn.close()
+        
+        except Exception as e:
+            print(f"💥 Критическая ошибка: {e}")
+
+        
     """Основная функция запуска бота"""
     logger.info("Запуск бота для создания опросов...")
     send_message(ID_MAIN, "опрос_бот запущен (long polling)...")
