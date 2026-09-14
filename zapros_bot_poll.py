@@ -5,28 +5,21 @@ import logging
 import time
 import threading
 import psycopg2
-from urllib.parse import urlparse
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Получение токенов
+# Константы
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')
 GROUP_ID = os.getenv('group_id_main_small')
-VOTES_DIR = '/app/data/votes_by_poll/'
-ACTUAL_IDS_PATH = '/app/data/pozyvn/dict_id_pozyv.txt'
 thread_id = 42
 
 BASE_URL = f'https://api.telegram.org/bot{BOT_TOKEN}'
 
 user_states = {}
 STATE_TIMEOUT = 3600
-
-# Файл кто допущен объявлять голосование
-with open('/app/data/admins_for_create_poll.txt', 'r') as file:
-    user_ids = [int(line.strip()) for line in file if line.strip()]
 
 if not BOT_TOKEN:
     raise ValueError("Установите переменную окружения BOT_TOKEN")
@@ -37,7 +30,6 @@ if not BOT_TOKEN:
 # ============================================================
 
 def get_db_conn():
-    """Создаёт подключение к базе."""
     url = os.getenv("DATABASE_URL")
     if not url:
         raise ValueError("DATABASE_URL не задана")
@@ -45,7 +37,6 @@ def get_db_conn():
 
 
 def init_db():
-    """Создаёт таблицы в БД, если их ещё нет."""
     conn = get_db_conn()
     cur = conn.cursor()
 
@@ -53,11 +44,11 @@ def init_db():
         CREATE TABLE IF NOT EXISTS polls (
             poll_id        TEXT PRIMARY KEY,
             message_id    BIGINT NOT NULL,
-            chat_id       BIGINT NOT NULL,
-            question      TEXT,
-            duration_days INT,
-            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            closed        BOOLEAN DEFAULT FALSE
+            chat_id        BIGINT NOT NULL,
+            question       TEXT,
+            duration_days  INT,
+            created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            closed         BOOLEAN DEFAULT FALSE
         );
     """)
 
@@ -78,6 +69,28 @@ def init_db():
         );
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_aliases (
+            user_id    BIGINT PRIMARY KEY,
+            callsign   TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS bot_admins (
+            user_id    BIGINT PRIMARY KEY,
+            added_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+    # Гарантируем, что ID_MAIN есть в админах
+    cur.execute("""
+        INSERT INTO bot_admins (user_id)
+        VALUES (%s)
+        ON CONFLICT (user_id) DO NOTHING;
+    """, (int(ID_MAIN),))
+
     conn.commit()
     cur.close()
     conn.close()
@@ -85,7 +98,6 @@ def init_db():
 
 
 def db_health_check():
-    """Простая проверка доступности БД."""
     try:
         conn = get_db_conn()
         cur = conn.cursor()
@@ -101,7 +113,6 @@ def db_health_check():
 
 
 def save_poll_to_db(poll_id, message_id, chat_id, question, duration_days):
-    """Сохраняет опрос в базу."""
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute("""
@@ -115,7 +126,6 @@ def save_poll_to_db(poll_id, message_id, chat_id, question, duration_days):
 
 
 def save_vote_to_db(poll_id, user_id):
-    """Сохраняет голос в базу (без дубликатов)."""
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute("""
@@ -130,7 +140,6 @@ def save_vote_to_db(poll_id, user_id):
 
 
 def get_poll_from_db(poll_id):
-    """Возвращает данные опроса из базы."""
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute("""
@@ -144,7 +153,6 @@ def get_poll_from_db(poll_id):
 
 
 def mark_poll_closed(poll_id):
-    """Помечает опрос как закрытый."""
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute("UPDATE polls SET closed = TRUE WHERE poll_id = %s;", (poll_id,))
@@ -154,7 +162,6 @@ def mark_poll_closed(poll_id):
 
 
 def get_voted_user_ids(poll_id):
-    """Возвращает множество ID проголосовавших."""
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute("SELECT user_id FROM poll_votes WHERE poll_id = %s;", (poll_id,))
@@ -165,7 +172,6 @@ def get_voted_user_ids(poll_id):
 
 
 def restore_pending_polls():
-    """При старте бота восстанавливает незакрытые опросы."""
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute("SELECT poll_id, message_id, chat_id, question, duration_days, created_at FROM polls WHERE closed = FALSE;")
@@ -200,11 +206,122 @@ def restore_pending_polls():
 
 
 # ============================================================
-#  ОТПРАВКА СООБЩЕНИЙ И ОПРОСОВ
+#  РАБОТА С ПОЗЫВНЫМИ (user_aliases)
+# ============================================================
+
+def get_user_id_by_callsign(callsign):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM user_aliases WHERE callsign = %s;", (callsign,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row[0] if row else None
+
+
+def save_callsign(user_id, callsign, is_admin=False):
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    if is_admin:
+        cur.execute("""
+            INSERT INTO user_aliases (user_id, callsign)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET
+                callsign = EXCLUDED.callsign,
+                updated_at = CURRENT_TIMESTAMP;
+        """, (user_id, callsign))
+        result = True
+    else:
+        cur.execute("""
+            INSERT INTO user_aliases (user_id, callsign)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) DO NOTHING;
+        """, (user_id, callsign))
+        result = cur.rowcount > 0
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return result
+
+
+def update_callsign_by_name(old_callsign, new_callsign):
+    user_id = get_user_id_by_callsign(old_callsign)
+    if user_id is None:
+        return False, None
+    success = save_callsign(user_id, new_callsign, is_admin=True)
+    return success, user_id
+
+
+def delete_callsign_by_name(callsign):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM user_aliases WHERE callsign = %s;", (callsign,))
+    deleted = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted
+
+
+def get_all_callsigns():
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, callsign FROM user_aliases;")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {row[0]: row[1] for row in rows}
+
+
+# ============================================================
+#  РАБОТА С АДМИНАМИ (bot_admins)
+# ============================================================
+
+def get_admin_ids():
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM bot_admins;")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {row[0] for row in rows}
+
+
+def add_admin(user_id):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO bot_admins (user_id)
+        VALUES (%s)
+        ON CONFLICT (user_id) DO NOTHING;
+    """, (user_id,))
+    added = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return added
+
+
+def remove_admin(user_id):
+    if user_id == int(ID_MAIN):
+        return False
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM bot_admins WHERE user_id = %s;", (user_id,))
+    removed = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return removed
+
+
+# ============================================================
+#  ОТПРАВКА СООБЩЕНИЙ, ОПРОСОВ И ФАЙЛОВ
 # ============================================================
 
 def send_message(chat_id, text):
-    """Отправляет сообщение в чат."""
     url = f'{BASE_URL}/sendMessage'
     payload = {'chat_id': chat_id, 'text': text}
     try:
@@ -213,9 +330,9 @@ def send_message(chat_id, text):
     except Exception as e:
         logger.error(f"Ошибка отправки сообщения: {e}")
         return None
-    
+
+
 def send_document(chat_id, file_path, caption=None):
-    """Отправляет файл в чат."""
     url = f'{BASE_URL}/sendDocument'
     try:
         with open(file_path, 'rb') as f:
@@ -229,8 +346,14 @@ def send_document(chat_id, file_path, caption=None):
         logger.error(f"Ошибка отправки файла: {e}")
         return None
 
+
 def send_poll(question, options, duration_days):
-    
+    # --- ТЕСТОВЫЙ РЕЖИМ: временно для отладки ---
+    # Закомментируй эти две строки, когда вернёшься к проде:
+    test_minutes = 10
+    duration_days = test_minutes / 1440
+    # ---------------------------------------------
+
     url = f'{BASE_URL}/sendPoll'
     payload = {
         'chat_id': GROUP_ID,
@@ -248,33 +371,13 @@ def send_poll(question, options, duration_days):
             poll_message_id = poll_result['result']['message_id']
             poll_id = poll_result['result']['poll']['id']
 
-            # Сохраняем в базу (duration_days уже перезаписан)
-            #save_poll_to_db(poll_id, poll_message_id, GROUP_ID, question, duration_days)
-            
-            # Было (где-то в send_poll):
-            #save_poll_to_db(poll_id, poll_message_id, GROUP_ID, question, duration_days)
+            save_poll_to_db(poll_id, poll_message_id, GROUP_ID, question, duration_days)
 
-            # Стало (временно для теста):
-            test_minutes = 10
-            save_poll_to_db(poll_id, poll_message_id, GROUP_ID, question, test_minutes / 1440)
-            
-            
+            logger.info(f"Опрос отправлен, message_id: {poll_message_id}, poll_id: {poll_id}")
 
-            logger.info(f"Опрос отправлен, message_id: {poll_message_id}, poll_id: {poll_id}, срок: {duration_days:.4f} дней")
-
-            # Запускаем таймер закрытия
             timer_thread = threading.Thread(
                 target=_close_poll_timer,
-                #args=(poll_id, GROUP_ID, poll_message_id, duration_days * 24 * 60 * 60),
-                
-                # Было:
-                #args=(poll_id, GROUP_ID, poll_message_id, duration_days * 24 * 60 * 60),
-
-                # Стало:
-                args=(poll_id, GROUP_ID, poll_message_id, test_minutes * 60),
-
-                
-                
+                args=(poll_id, GROUP_ID, poll_message_id, duration_days * 24 * 60 * 60),
                 daemon=True
             )
             timer_thread.start()
@@ -286,23 +389,21 @@ def send_poll(question, options, duration_days):
         logger.error(f"Неожиданная ошибка при отправке опроса: {e}")
         return {'ok': False, 'error': str(e)}
 
+
 # ============================================================
 #  ЗАКРЫТИЕ ОПРОСОВ
 # ============================================================
 
 def _close_poll_timer(poll_id, chat_id, message_id, remaining_seconds):
-    """Ждёт оставшееся время, затем закрывает опрос."""
+    logger.info(f"[ТАЙМЕР] Опрос {poll_id}: ждём {remaining_seconds / 60:.1f} минут")
     if remaining_seconds > 0:
-        logger.info(f"Таймер опроса {poll_id}: ждём {remaining_seconds / 3600:.1f} часов")
         time.sleep(remaining_seconds)
     _do_close_poll(poll_id, chat_id, message_id)
 
 
 def _do_close_poll(poll_id, chat_id, message_id):
-    """Закрывает опрос через Telegram API и запускает постобработку."""
-    # Проверяем, не закрыт ли уже
     poll_data = get_poll_from_db(poll_id)
-    if poll_data and poll_data[5]:  # closed == True
+    if poll_data and poll_data[5]:
         logger.info(f"Опрос {poll_id} уже закрыт, пропускаем")
         return
 
@@ -333,32 +434,41 @@ def _do_close_poll(poll_id, chat_id, message_id):
 # ============================================================
 
 def get_missing_voters_list(poll_id):
-    """Возвращает список ID пользователей, не проголосовавших в опросе."""
     try:
-        with open(ACTUAL_IDS_PATH, 'r', encoding='utf-8') as file:
-            dict_pozyvn = json.load(file)
-        all_user_ids = set(int(key) for key in dict_pozyvn.keys())
+        all_callsigns = get_all_callsigns()
+        all_user_ids = set(all_callsigns.keys())
 
         voted_ids = get_voted_user_ids(poll_id)
         missing_ids = all_user_ids - voted_ids
-        return list(missing_ids)
+
+        missing_values = [all_callsigns[uid] for uid in missing_ids]
+
+        logger.info(f"Опрос {poll_id}: всего {len(all_user_ids)}, "
+                     f"проголосовало {len(voted_ids)}, "
+                     f"не проголосовало {len(missing_ids)}")
+
+        return missing_values
     except Exception as e:
         logger.error(f"Ошибка получения списка не проголосовавших для опроса {poll_id}: {e}")
         return []
 
 
 def send_post_closure_notifications(poll_id):
-    """Отправляет уведомления не проголосовавшим после закрытия опроса."""
     logger.info(f"Отправка уведомлений для опроса {poll_id}")
 
     try:
-        missing_users = get_missing_voters_list(poll_id)
+        missing_values = get_missing_voters_list(poll_id)
 
-        if not missing_users:
+        if not missing_values:
             logger.info(f"Все проголосовали в опросе {poll_id}, уведомления не нужны")
             return
 
-        logger.info(f"Отправляем уведомления {len(missing_users)} пользователям")
+        logger.info(f"Отправляем уведомления {len(missing_values)} пользователям")
+
+        all_callsigns = get_all_callsigns()
+        voted_ids = get_voted_user_ids(poll_id)
+        all_user_ids = set(all_callsigns.keys())
+        missing_ids = list(all_user_ids - voted_ids)
 
         message_text = (
             "📣 Опрос завершён!\n\n"
@@ -370,7 +480,7 @@ def send_post_closure_notifications(poll_id):
         sent_count = 0
         failed_count = 0
 
-        for user_id in missing_users:
+        for user_id in missing_ids:
             try:
                 send_message(user_id, message_text)
                 sent_count += 1
@@ -381,27 +491,22 @@ def send_post_closure_notifications(poll_id):
 
         logger.info(f"Уведомления: отправлено {sent_count}, ошибок {failed_count} (опрос {poll_id})")
 
-        # --- НОВОЕ: создаём TXT и отправляем админу ---
+        # --- Создаём TXT и отправляем админу ---
         output_path = f'/app/data/txt_results/missing_{poll_id}.txt'
         if generate_missing_voters_txt(poll_id, output_path):
-            send_document(ID_MAIN, output_path, caption=f"📋 Не проголосовавшие (опрос {poll_id})")
+            send_document(int(ID_MAIN), output_path, caption=f"📋 Не проголосовавшие (опрос {poll_id})")
             logger.info(f"TXT отправлен админу: {output_path}")
 
     except Exception as e:
         logger.error(f"Критическая ошибка при отправке уведомлений для опроса {poll_id}: {e}")
 
+
 def generate_missing_voters_txt(poll_id, output_txt_path):
-    """Создаёт TXT-файл со списком не проголосовавших."""
     try:
-        missing_ids = get_missing_voters_list(poll_id)
-        if not missing_ids:
+        missing_values = get_missing_voters_list(poll_id)
+        if not missing_values:
             logger.info(f"Все проголосовали в опросе {poll_id}, TXT не создаётся")
             return False
-
-        with open(ACTUAL_IDS_PATH, 'r', encoding='utf-8') as file:
-            dict_pozyvn = json.load(file)
-        dict_keys_as_int = {int(key): value for key, value in dict_pozyvn.items()}
-        missing_values = [dict_keys_as_int[key] for key in missing_ids]
 
         lines = [
             f"Список не проголосовавших (опрос {poll_id})",
@@ -427,7 +532,6 @@ def generate_missing_voters_txt(poll_id, output_txt_path):
 # ============================================================
 
 def get_updates(offset=None):
-    """Получает обновления от Telegram."""
     url = f'{BASE_URL}/getUpdates'
     params = {'timeout': 30, 'offset': offset}
     try:
@@ -439,7 +543,6 @@ def get_updates(offset=None):
 
 
 def start_poll_creation(chat_id):
-    """Начинает процесс создания опроса."""
     user_states[chat_id] = {
         'state': 'waiting_question',
         'created_at': time.time(),
@@ -451,7 +554,6 @@ def start_poll_creation(chat_id):
 
 
 def handle_poll_dialog(chat_id, text):
-    """Обрабатывает диалог создания опроса."""
     if chat_id not in user_states:
         return
 
@@ -510,7 +612,7 @@ def handle_poll_dialog(chat_id, text):
             )
             if result.get('ok'):
                 send_message(chat_id, f"✅ Опрос создан! Срок: {duration_days} дней")
-                send_message(ID_MAIN, f"✅ Опрос создан (срок: {duration_days} дней)")
+                send_message(int(ID_MAIN), f"✅ Опрос создан (срок: {duration_days} дней)")
             else:
                 send_message(chat_id, f"❌ Ошибка: {result.get('error', 'Unknown')}")
 
@@ -521,31 +623,125 @@ def handle_poll_dialog(chat_id, text):
 
 
 def handle_message(message):
-    """Обрабатывает входящие сообщения."""
     chat_id = message['chat']['id']
+    user_id = message['from']['id']
     text = message.get('text', '').strip()
 
-    logger.info(f"Сообщение от {chat_id}: {text}")
+    logger.info(f"Сообщение от {chat_id} (user_id={user_id}): {text}")
+
+    is_main_admin = (user_id == int(ID_MAIN))
+
+    admin_ids = get_admin_ids()
+    is_admin = user_id in admin_ids
+
+    # --- Команды только для ID_MAIN ---
+
+    if text.startswith('/set_callsign'):
+        if not is_main_admin:
+            send_message(chat_id, "❌ Только главный админ может менять позывные")
+            return
+        parts = text.split(maxsplit=2)
+        if len(parts) < 3:
+            send_message(chat_id, "Используй: /set_callsign <старый_позывной> <новый_позывной>")
+            return
+        old_callsign = parts[1].strip()
+        new_callsign = parts[2].strip()
+        success, found_uid = update_callsign_by_name(old_callsign, new_callsign)
+        if success:
+            send_message(chat_id, f"✅ Позывной изменён: {old_callsign} → {new_callsign} (id: {found_uid})")
+        else:
+            send_message(chat_id, f"❌ Позывной '{old_callsign}' не найден")
+        return
+
+    if text.startswith('/del_callsign'):
+        if not is_main_admin:
+            send_message(chat_id, "❌ Только главный админ может удалять позывные")
+            return
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            send_message(chat_id, "Используй: /del_callsign <позывной>")
+            return
+        callsign = parts[1].strip()
+        deleted = delete_callsign_by_name(callsign)
+        if deleted > 0:
+            send_message(chat_id, f"✅ Удалён позывной: {callsign} ({deleted} записей)")
+        else:
+            send_message(chat_id, f"❌ Позывной '{callsign}' не найден")
+        return
+
+    if text.startswith('/add_admin'):
+        if not is_main_admin:
+            send_message(chat_id, "❌ Только главный админ может добавлять админов")
+            return
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            send_message(chat_id, "Используй: /add_admin <позывной>")
+            return
+        callsign = parts[1].strip()
+        target_user_id = get_user_id_by_callsign(callsign)
+        if target_user_id is None:
+            send_message(chat_id, f"❌ Позывной '{callsign}' не найден в базе")
+            return
+        if add_admin(target_user_id):
+            send_message(chat_id, f"✅ Добавлен админ: {callsign} (id: {target_user_id})")
+        else:
+            send_message(chat_id, f"ℹ️ {callsign} уже админ")
+        return
+
+    if text.startswith('/del_admin'):
+        if not is_main_admin:
+            send_message(chat_id, "❌ Только главный админ может удалять админов")
+            return
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            send_message(chat_id, "Используй: /del_admin <позывной>")
+            return
+        callsign = parts[1].strip()
+        target_user_id = get_user_id_by_callsign(callsign)
+        if target_user_id is None:
+            send_message(chat_id, f"❌ Позывной '{callsign}' не найден в базе")
+            return
+        if remove_admin(target_user_id):
+            send_message(chat_id, f"✅ Удалён админ: {callsign} (id: {target_user_id})")
+        else:
+            send_message(chat_id, f"❌ {callsign} нельзя удалить (главный админ или не найден в bot_admins)")
+        return
+
+    # --- Обычные команды ---
 
     if text == '/start':
-        send_message(chat_id, "👋 Привет! Я бот для создания опросов.\nИспользуйте /create_poll для создания опроса")
+        send_message(chat_id, "👋 Привет! Я бот для опросов.\n"
+                              "Используйте /create_poll для создания опроса\n"
+                              "Или напишите свой позывной для регистрации")
     elif text == '/create_poll':
-        start_poll_creation(chat_id)
+        if is_admin:
+            start_poll_creation(chat_id)
+        else:
+            send_message(chat_id, "❌ Создание опросов доступно не всем")
     elif chat_id in user_states:
         handle_poll_dialog(chat_id, text)
     else:
-        send_message(chat_id, "Я понимаю команды:\n/start — начать работу\n/create_poll — создать опрос")
+        callsign = text
+        saved = save_callsign(user_id, callsign, is_admin=False)
+        if saved:
+            send_message(chat_id, f"✅ Позывной сохранён: {callsign}\n"
+                                 f"Изменить позывной может только админ.")
+        else:
+            send_message(chat_id, f"У вас уже есть позывной. Для изменения обратитесь к админу.\n"
+                                 f"Команды:\n"
+                                 f"/start — помощь\n"
+                                 f"/create_poll — создать опрос")
 
 
 def handle_polling(update):
-    """Обработка голосов в опросах."""
-    if 'poll_answer' in update:
-        poll_answer = update['poll_answer']
-        user_id = poll_answer['user']['id']
-        poll_id = poll_answer['poll_id']
+    if 'poll_answer' not in update:
+        return
+    poll_answer = update['poll_answer']
+    user_id = poll_answer['user']['id']
+    poll_id = poll_answer['poll_id']
 
-        logger.info(f"Голосование: опрос {poll_id}, пользователь {user_id}")
-        save_vote_to_db(poll_id, user_id)
+    logger.info(f"Голосование: опрос {poll_id}, пользователь {user_id}")
+    save_vote_to_db(poll_id, user_id)
 
 
 # ============================================================
@@ -553,16 +749,12 @@ def handle_polling(update):
 # ============================================================
 
 def main():
-    # Инициализация БД
     init_db()
     db_health_check()
-
-    # Восстановление незакрытых опросов
     restore_pending_polls()
 
-    # Запуск бота
     logger.info("Запуск бота для создания опросов...")
-    send_message(ID_MAIN, "опрос_бот запущен (long polling)...")
+    send_message(int(ID_MAIN), "опрос_бот запущен (long polling)...")
     offset = None
 
     while True:
@@ -582,7 +774,7 @@ def main():
                         chat_id = chat['id']
                         chat_type = chat['type']
 
-                        if chat_type == 'private' and chat_id in user_ids:
+                        if chat_type == 'private':
                             handle_message(message)
 
                     elif 'poll_answer' in update:
