@@ -24,7 +24,7 @@ BASE_URL = f'https://api.telegram.org/bot{BOT_TOKEN}'
 user_states = {}
 STATE_TIMEOUT = 3600
 
-# Файл кто допущен голосовать
+# Файл кто допущен объявлять голосование
 with open('/app/data/admins_for_create_poll.txt', 'r') as file:
     user_ids = [int(line.strip()) for line in file if line.strip()]
 
@@ -213,10 +213,24 @@ def send_message(chat_id, text):
     except Exception as e:
         logger.error(f"Ошибка отправки сообщения: {e}")
         return None
-
+    
+def send_document(chat_id, file_path, caption=None):
+    """Отправляет файл в чат."""
+    url = f'{BASE_URL}/sendDocument'
+    try:
+        with open(file_path, 'rb') as f:
+            files = {'document': f}
+            data = {'chat_id': chat_id}
+            if caption:
+                data['caption'] = caption
+            response = requests.post(url, data=data, files=files, timeout=10)
+            return response.json()
+    except Exception as e:
+        logger.error(f"Ошибка отправки файла: {e}")
+        return None
 
 def send_poll(question, options, duration_days):
-    """Отправляет опрос в чат."""
+    
     url = f'{BASE_URL}/sendPoll'
     payload = {
         'chat_id': GROUP_ID,
@@ -234,15 +248,33 @@ def send_poll(question, options, duration_days):
             poll_message_id = poll_result['result']['message_id']
             poll_id = poll_result['result']['poll']['id']
 
-            # Сохраняем в базу
-            save_poll_to_db(poll_id, poll_message_id, GROUP_ID, question, duration_days)
+            # Сохраняем в базу (duration_days уже перезаписан)
+            #save_poll_to_db(poll_id, poll_message_id, GROUP_ID, question, duration_days)
+            
+            # Было (где-то в send_poll):
+            #save_poll_to_db(poll_id, poll_message_id, GROUP_ID, question, duration_days)
 
-            logger.info(f"Опрос отправлен, message_id: {poll_message_id}, poll_id: {poll_id}")
+            # Стало (временно для теста):
+            test_minutes = 10
+            save_poll_to_db(poll_id, poll_message_id, GROUP_ID, question, test_minutes / 1440)
+            
+            
+
+            logger.info(f"Опрос отправлен, message_id: {poll_message_id}, poll_id: {poll_id}, срок: {duration_days:.4f} дней")
 
             # Запускаем таймер закрытия
             timer_thread = threading.Thread(
                 target=_close_poll_timer,
-                args=(poll_id, GROUP_ID, poll_message_id, duration_days * 24 * 60 * 60),
+                #args=(poll_id, GROUP_ID, poll_message_id, duration_days * 24 * 60 * 60),
+                
+                # Было:
+                #args=(poll_id, GROUP_ID, poll_message_id, duration_days * 24 * 60 * 60),
+
+                # Стало:
+                args=(poll_id, GROUP_ID, poll_message_id, test_minutes * 60),
+
+                
+                
                 daemon=True
             )
             timer_thread.start()
@@ -253,7 +285,6 @@ def send_poll(question, options, duration_days):
     except Exception as e:
         logger.error(f"Неожиданная ошибка при отправке опроса: {e}")
         return {'ok': False, 'error': str(e)}
-
 
 # ============================================================
 #  ЗАКРЫТИЕ ОПРОСОВ
@@ -349,9 +380,15 @@ def send_post_closure_notifications(poll_id):
                 failed_count += 1
 
         logger.info(f"Уведомления: отправлено {sent_count}, ошибок {failed_count} (опрос {poll_id})")
+
+        # --- НОВОЕ: создаём TXT и отправляем админу ---
+        output_path = f'/app/data/txt_results/missing_{poll_id}.txt'
+        if generate_missing_voters_txt(poll_id, output_path):
+            send_document(ID_MAIN, output_path, caption=f"📋 Не проголосовавшие (опрос {poll_id})")
+            logger.info(f"TXT отправлен админу: {output_path}")
+
     except Exception as e:
         logger.error(f"Критическая ошибка при отправке уведомлений для опроса {poll_id}: {e}")
-
 
 def generate_missing_voters_txt(poll_id, output_txt_path):
     """Создаёт TXT-файл со списком не проголосовавших."""
