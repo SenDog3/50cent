@@ -720,19 +720,41 @@ def handle_message(message):
             send_message(chat_id, "❌ Создание опросов доступно не всем")
     elif chat_id in user_states:
         handle_poll_dialog(chat_id, text)
+    
     else:
-        callsign = text
+        # Приём позывного от обычного участника
+        raw_callsign = text
+
+        # 1. Защита от команд
+        if raw_callsign.startswith('/'):
+            send_message(chat_id, "❌ Это похоже на команду. Позывной не должен начинаться с «/».")
+            return
+
+        # 2. Приводим к нижнему регистру сразу
+        cleaned = raw_callsign.lower()
+
+        # 3. Оставляем только кириллические буквы (а–я, ё)
+        callsign = ''
+        for ch in cleaned:
+            if 'а' <= ch <= 'я' or ch == 'ё':
+                callsign += ch
+
+        # 4. Проверка длины: минимум 2 символа
+        if len(callsign) < 2:
+            send_message(
+                chat_id,
+                "❌ Позывной должен содержать минимум 2 русские буквы.\n"
+                "Цифры, пробелы, спецсимволы и латиница не допускаются."
+            )
+            return
+
         saved = save_callsign(user_id, callsign, is_admin=False)
         if saved:
-            send_message(chat_id, f"✅ Позывной сохранён: {callsign}\n"
-                                 f"Изменить позывной может только админ.")
+            send_message(chat_id, f"✅ Позывной сохранён: {callsign}")
         else:
-            send_message(chat_id, f"У вас уже есть позывной. Для изменения обратитесь к админу.\n"
-                                 f"Команды:\n"
-                                 f"/start — помощь\n"
-                                 f"/create_poll — создать опрос")
-
-
+            send_message(chat_id, f"ℹ️ Твой позывной уже установлен: {callsign}. Для изменения обратитесь к админу.")
+            
+            
 def handle_polling(update):
     if 'poll_answer' not in update:
         return
