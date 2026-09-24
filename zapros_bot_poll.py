@@ -282,6 +282,45 @@ def get_all_callsigns():
     conn.close()
     return {row[0]: row[1] for row in rows}
 
+# ============================================================
+#  ВНЕШНИЕ ПОЗЫВНЫЕ (external_callsigns)
+# ============================================================
+
+def add_external_callsign(callsign):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    callsign = callsign.lower().strip()
+    cur.execute("""
+        INSERT INTO external_callsigns (callsign)
+        VALUES (%s)
+        ON CONFLICT (callsign) DO NOTHING;
+    """, (callsign,))
+    added = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return added
+
+
+def remove_external_callsign(callsign):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM external_callsigns WHERE callsign = %s;", (callsign.lower().strip(),))
+    deleted = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted
+
+
+def get_external_callsigns():
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT callsign FROM external_callsigns ORDER BY callsign;")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [row[0] for row in rows]
 
 # ============================================================
 #  РАБОТА С АДМИНАМИ (bot_admins)
