@@ -83,7 +83,15 @@ def init_db():
             added_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
-
+    
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS external_callsigns (
+            id         SERIAL PRIMARY KEY,
+            callsign   TEXT NOT NULL UNIQUE,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    
     # Гарантируем, что ID_MAIN есть в админах
     cur.execute("""
         INSERT INTO bot_admins (user_id)
@@ -458,8 +466,9 @@ def send_post_closure_notifications(poll_id):
 
     try:
         missing_values = get_missing_voters_list(poll_id)
+        external = get_external_callsigns()
 
-        if not missing_values:
+        if not missing_values and not external:
             logger.info(f"Все проголосовали в опросе {poll_id}, уведомления не нужны")
             return
 
@@ -474,7 +483,7 @@ def send_post_closure_notifications(poll_id):
             "📣 Опрос завершён!\n\n"
             "К сожалению, вы не приняли участие в голосовании в moto.\n\n"
             "Это нарушение правил.\n"
-            "Напишите админу Седому!"
+            "Напишите админу!"
         )
 
         sent_count = 0
@@ -490,6 +499,19 @@ def send_post_closure_notifications(poll_id):
                 failed_count += 1
 
         logger.info(f"Уведомления: отправлено {sent_count}, ошибок {failed_count} (опрос {poll_id})")
+        
+        # --- Сообщение админу со списком ---
+        parts = []
+        if missing_values:
+            parts.append(f"Не проголосовало: {len(missing_values)}\n" +
+                         "\n".join(f"• {c}" for c in missing_values))
+        if external:
+            parts.append(f"Не прислали позывной в бот: {len(external)}\n" +
+                         "\n".join(f"• {c}" for c in external))
+
+        admin_text = f"📋 Опрос {poll_id} завершён.\n\n" + "\n\n".join(parts)
+        send_message(int(ID_MAIN), admin_text)
+               
 
         # --- Создаём TXT и отправляем админу ---
         output_path = f'/app/data/txt_results/missing_{poll_id}.txt'
@@ -504,27 +526,43 @@ def send_post_closure_notifications(poll_id):
 def generate_missing_voters_txt(poll_id, output_txt_path):
     try:
         missing_values = get_missing_voters_list(poll_id)
-        if not missing_values:
-            logger.info(f"Все проголосовали в опросе {poll_id}, TXT не создаётся")
+        external = get_external_callsigns()
+
+        if not missing_values and not external:
+            logger.info(f"Все проголосовали (опрос {poll_id}), TXT не создаётся")
             return False
 
         lines = [
-            f"Список не проголосовавших (опрос {poll_id})",
-            f"Всего не проголосовало: {len(missing_values)} человек",
+            f"Список по опросу {poll_id}",
             "=" * 40,
-            *missing_values
         ]
 
-        os.makedirs('/app/data/txt_results', exist_ok=True)
+        if missing_values:
+            lines.append(f"Не проголосовало: {len(missing_values)} человек")
+            lines.append("-" * 40)
+            lines.extend(f"  {c}" for c in missing_values)
 
+        if external:
+            lines.append("")
+            lines.append(f"Не прислали позывной в бот: {len(external)} человек")
+            lines.append("-" * 40)
+            lines.extend(f"  {c}" for c in external)
+
+        lines.append("=" * 40)
+
+        os.makedirs('/app/data/txt_results', exist_ok=True)
         with open(output_txt_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
 
-        logger.info(f"TXT создан: {output_txt_path}, не проголосовало: {len(missing_values)}")
+        logger.info(f"TXT создан: {output_txt_path} "
+                     f"(не проголосовало: {len(missing_values)}, "
+                     f"внешних: {len(external)})")
         return True
+
     except Exception as e:
         logger.error(f"Ошибка при создании TXT для опроса {poll_id}: {e}")
         return False
+
 
 
 # ============================================================
@@ -666,9 +704,39 @@ def handle_message(message):
         if deleted > 0:
             send_message(chat_id, f"✅ Удалён позывной: {callsign} ({deleted} записей)")
         else:
-            send_message(chat_id, f"❌ Позывной '{callsign}' не найден")
+            send_message(chat_id, f"❌ Позывной '{callsign}' не найден")                        
         return
 
+    if text.startswith('/add_external'):
+        if not is_main_admin:
+            send_message(chat_id, "❌ Только главный админ")
+            return
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            send_message(chat_id, "Используй: /add_external <позывной>")
+            return
+        callsign = parts[1].strip().lower()
+        if add_external_callsign(callsign):
+            send_message(chat_id, f"✅ Добавлен внешний позывной: {callsign}")
+        else:
+            send_message(chat_id, f"ℹ️ Позывной {callsign} уже в списке")
+        return
+
+    if text.startswith('/del_external'):
+        if not is_main_admin:
+            send_message(chat_id, "❌ Только главный админ")
+            return
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            send_message(chat_id, "Используй: /del_external <позывной>")
+            return
+        callsign = parts[1].strip().lower()
+        if remove_external_callsign(callsign):
+            send_message(chat_id, f"✅ Удалён внешний позывной: {callsign}")
+        else:
+            send_message(chat_id, f"❌ Позывной {callsign} не найден")
+        return
+    
     if text.startswith('/add_admin'):
         if not is_main_admin:
             send_message(chat_id, "❌ Только главный админ может добавлять админов")
