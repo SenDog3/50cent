@@ -397,8 +397,8 @@ def send_document(chat_id, file_path, caption=None):
 def send_poll(question, options, duration_days):
     # --- ТЕСТОВЫЙ РЕЖИМ: временно для отладки ---
     # Закомментируй эти две строки, когда вернёшься к проде:
-    test_minutes = 10
-    duration_days = test_minutes / 1440
+    # test_minutes = 10
+    # duration_days = test_minutes / 1440
     # ---------------------------------------------
 
     url = f'{BASE_URL}/sendPoll'
@@ -522,7 +522,7 @@ def send_post_closure_notifications(poll_id):
             "📣 Опрос завершён!\n\n"
             "К сожалению, вы не приняли участие в голосовании в moto.\n\n"
             "Это нарушение правил.\n"
-            "Напишите админу!"
+            "Зайди в чат дружины, будь с нами и напиши админу!"
         )
 
         sent_count = 0
@@ -539,7 +539,7 @@ def send_post_closure_notifications(poll_id):
 
         logger.info(f"Уведомления: отправлено {sent_count}, ошибок {failed_count} (опрос {poll_id})")
         
-        # --- Сообщение админу со списком ---
+        # --- Сообщение главному админу со списком ---
         parts = []
         if missing_values:
             parts.append(f"Не проголосовало: {len(missing_values)}\n" +
