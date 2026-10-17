@@ -602,8 +602,7 @@ def generate_missing_voters_txt(poll_id, output_txt_path):
         logger.error(f"Ошибка при создании TXT для опроса {poll_id}: {e}")
         return False
 
-
-
+    
 # ============================================================
 #  ПОЛУЧЕНИЕ ОБНОВЛЕНИЙ И ДИАЛОГ
 # ============================================================
@@ -631,12 +630,17 @@ def start_poll_creation(chat_id):
 
 
 def handle_poll_dialog(chat_id, text):
+    # Защита: если состояния нет — ничего не делаем
     if chat_id not in user_states:
         return
 
+    # Таймаут состояния
     if time.time() - user_states[chat_id]['created_at'] > STATE_TIMEOUT:
         del user_states[chat_id]
-        send_message(chat_id, "⏰ Время ожидания истекло. Начните заново /create_poll")
+        send_message(
+            chat_id,
+            "⏰ Время ожидания истекло. Начните заново: /start"
+        )
         return
 
     state = user_states[chat_id]['state']
@@ -655,7 +659,10 @@ def handle_poll_dialog(chat_id, text):
         if text.lower() in ['готово', 'done', 'finish']:
             options = user_states[chat_id]['options']
             if len(options) < 2:
-                send_message(chat_id, "❌ Нужно минимум 2 варианта ответа!\nНачните заново /create_poll")
+                send_message(
+                    chat_id,
+                    "❌ Нужно минимум 2 варианта ответа!\nНачните заново: /start"
+                )
                 del user_states[chat_id]
             else:
                 user_states[chat_id]['state'] = 'waiting_duration'
@@ -699,6 +706,24 @@ def handle_poll_dialog(chat_id, text):
             send_message(chat_id, "❌ Введите корректное число дней (положительное целое):")
 
 
+def show_help(chat_id):
+    help_text = (
+        "📋 **Список команд бота:**\n\n"
+        "🔹 Для участников:\n"
+        "   Просто напишите ваш позывной (например: *гром*) — он сохранится в базе.\n"
+        "   ⚠️ Позывной: только русские буквы, минимум 2 символа, без цифр и спецсимволов.\n\n"
+        "🔹 Для создания опроса:\n"
+        "   `/send` — запустить создание опроса (доступно админам).\n"
+        "   После команды следуйте подсказкам бота: вопрос → варианты ответов → срок в днях.\n\n"
+        "🔹 Админские команды (только для админов):\n"
+        "   `/set_callsign <старый> <новый>` — сменить позывной пользователя.\n"
+        "   `/del_callsign <позывной>` — удалить позывной.\n"
+        "   `/add_external <позывной>` / `/del_external <позывной>` — управление внешними позывными.\n"
+        "   `/add_admin <позывной>` / `/del_admin <позывной>` — добавить/удалить админа.\n"
+    )
+    send_message(chat_id, help_text, parse_mode='Markdown')
+
+
 def handle_message(message):
     chat_id = message['chat']['id']
     user_id = message['from']['id']
@@ -707,12 +732,10 @@ def handle_message(message):
     logger.info(f"Сообщение от {chat_id} (user_id={user_id}): {text}")
 
     is_main_admin = (user_id == int(ID_MAIN))
-
     admin_ids = get_admin_ids()
     is_admin = user_id in admin_ids
 
     # --- Команды только для ID_MAIN ---
-
     if text.startswith('/set_callsign'):
         if not is_main_admin:
             send_message(chat_id, "❌ Только главный админ может менять позывные")
@@ -743,7 +766,7 @@ def handle_message(message):
         if deleted > 0:
             send_message(chat_id, f"✅ Удалён позывной: {callsign} ({deleted} записей)")
         else:
-            send_message(chat_id, f"❌ Позывной '{callsign}' не найден")                        
+            send_message(chat_id, f"❌ Позывной '{callsign}' не найден")
         return
 
     if text.startswith('/add_external'):
@@ -773,9 +796,9 @@ def handle_message(message):
         if remove_external_callsign(callsign):
             send_message(chat_id, f"✅ Удалён внешний позывной: {callsign}")
         else:
-            send_message(chat_id, f"❌ Позывной {callsign} не найден")
+            send_message(chat_id, f"❌ Позывной '{callsign}' не найден")
         return
-    
+
     if text.startswith('/add_admin'):
         if not is_main_admin:
             send_message(chat_id, "❌ Только главный админ может добавлять админов")
@@ -815,62 +838,78 @@ def handle_message(message):
         return
 
     # --- Обычные команды ---
-
     if text == '/start':
-        send_message(chat_id, "👋 Привет! Я бот для опросов.\n"
-                              "Используйте /create_poll для создания опроса\n"
-                              "Или напишите свой позывной для регистрации")
-    elif text == '/create_poll':
+        show_help(chat_id)
+        return
+
+    if text == '/send':
         if is_admin:
             start_poll_creation(chat_id)
         else:
-            send_message(chat_id, "❌ Создание опросов доступно не всем")
-    elif chat_id in user_states:
-        handle_poll_dialog(chat_id, text)
-    
-    else:
-        # Приём позывного от обычного участника
-        raw_callsign = text
-
-        # 1. Защита от команд
-        if raw_callsign.startswith('/'):
-            send_message(chat_id, "❌ Это похоже на команду. Позывной не должен начинаться с «/».")
-            return
-
-        # 2. Приводим к нижнему регистру сразу
-        cleaned = raw_callsign.lower()
-
-        # 3. Оставляем только кириллические буквы (а–я, ё)
-        callsign = ''
-        for ch in cleaned:
-            if 'а' <= ch <= 'я' or ch == 'ё':
-                callsign += ch
-
-        # 4. Проверка длины: минимум 2 символа
-        if len(callsign) < 2:
             send_message(
                 chat_id,
-                "❌ Позывной должен содержать минимум 2 русские буквы.\n"
-                "Цифры, пробелы, спецсимволы и латиница не допускаются."
+                "❌ Создание опросов доступно только админам.\nНапишите /start, чтобы увидеть список команд."
             )
-            return
+        return
 
-        saved = save_callsign(user_id, callsign, is_admin=False)
-        if saved:
-            send_message(chat_id, f"✅ Позывной сохранён: {callsign}")
-        else:
-            send_message(chat_id, f"ℹ️ Твой позывной уже установлен: {callsign}. Для изменения обратитесь к админу.")
-            
-            
+    # Если мы в состоянии диалога опроса — обрабатываем шаг диалога
+    if chat_id in user_states:
+        handle_poll_dialog(chat_id, text)
+        return
+
+    # Любая другая команда (неизвестная) — показываем справку
+    if text.startswith('/'):
+        send_message(
+            chat_id,
+            "⚠️ Неизвестная команда.\nНапишите /start, чтобы увидеть полный список доступных команд."
+        )
+        return
+
+    # Приём позывного от обычного участника
+    raw_callsign = text
+
+    # Приводим к нижнему регистру сразу
+    cleaned = raw_callsign.lower()
+
+    # Оставляем только кириллические буквы (а–я, ё)
+    callsign = ''
+    for ch in cleaned:
+        if 'а' <= ch <= 'я' or ch == 'ё':
+            callsign += ch
+
+    # Проверка длины: минимум 2 символа
+    if len(callsign) < 2:
+        send_message(
+            chat_id,
+            "❌ Позывной должен содержать минимум 2 русские буквы.\n"
+            "Цифры, пробелы, спецсимволы и латиница не допускаются.\n"
+            "Напишите /start для справки."
+        )
+        return
+
+    saved = save_callsign(user_id, callsign, is_admin=False)
+    if saved:
+        send_message(chat_id, f"✅ Позывной сохранён: {callsign}")
+    else:
+        send_message(chat_id, f"ℹ️ Твой позывной уже установлен: {callsign}. Для изменения обратитесь к админу.")
+
+
 def handle_polling(update):
     if 'poll_answer' not in update:
         return
+
     poll_answer = update['poll_answer']
+    # Базовая защита от отсутствующих полей
+    if 'user' not in poll_answer or 'poll_id' not in poll_answer:
+        logger.warning(f"poll_answer без ожидаемых полей: {poll_answer}")
+        return
+
     user_id = poll_answer['user']['id']
     poll_id = poll_answer['poll_id']
 
     logger.info(f"Голосование: опрос {poll_id}, пользователь {user_id}")
     save_vote_to_db(poll_id, user_id)
+
 
 
 # ============================================================
