@@ -730,112 +730,131 @@ def handle_message(message):
     text = message.get('text', '').strip()
 
     logger.info(f"Сообщение от {chat_id} (user_id={user_id}): {text}")
-
+     
+    # --- Проверки прав ---
     is_main_admin = (user_id == int(ID_MAIN))
     admin_ids = get_admin_ids()
     is_admin = user_id in admin_ids
+    
+    if text.startswith('/'):
+        # === ТЕПЕРЬ ДОСТУПНО ВСЕМ АДМИНАМ (is_admin) ===
 
-    # --- Команды только для ID_MAIN ---
-    if text.startswith('/set_callsign'):
-        if not is_main_admin:
-            send_message(chat_id, "❌ Только главный админ может менять позывные")
+        if text.startswith('/set_callsign'):
+            # Проверка: должен быть админ (любой), а не обязательно ID_MAIN
+            if not is_admin:
+                send_message(chat_id, "❌ Только админы могут менять позывные")
+                return
+            parts = text.split(maxsplit=2)
+            if len(parts) < 3:
+                send_message(chat_id, "Используй: /set_callsign <старый_позывной> <новый_позывной>")
+                return
+            old_callsign = parts[1].strip()
+            new_callsign = parts[2].strip()
+            success, found_uid = update_callsign_by_name(old_callsign, new_callsign)
+            if success:
+                logger.info(f"Админ {user_id} сменил позывной: {old_callsign} → {new_callsign}")
+                send_message(chat_id, f"✅ Позывной изменён: {old_callsign} → {new_callsign} (id: {found_uid})")
+            else:
+                send_message(chat_id, f"❌ Позывной '{old_callsign}' не найден")
             return
-        parts = text.split(maxsplit=2)
-        if len(parts) < 3:
-            send_message(chat_id, "Используй: /set_callsign <старый_позывной> <новый_позывной>")
-            return
-        old_callsign = parts[1].strip()
-        new_callsign = parts[2].strip()
-        success, found_uid = update_callsign_by_name(old_callsign, new_callsign)
-        if success:
-            send_message(chat_id, f"✅ Позывной изменён: {old_callsign} → {new_callsign} (id: {found_uid})")
-        else:
-            send_message(chat_id, f"❌ Позывной '{old_callsign}' не найден")
-        return
 
-    if text.startswith('/del_callsign'):
-        if not is_main_admin:
-            send_message(chat_id, "❌ Только главный админ может удалять позывные")
+        if text.startswith('/del_callsign'):
+            if not is_admin:
+                send_message(chat_id, "❌ Только админы могут удалять позывные")
+                return
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                send_message(chat_id, "Используй: /del_callsign <позывной>")
+                return
+            callsign = parts[1].strip()
+            deleted = delete_callsign_by_name(callsign)
+            if deleted > 0:
+                logger.info(f"Админ {user_id} удалил позывной: {callsign}")
+                send_message(chat_id, f"✅ Удалён позывной: {callsign} ({deleted} записей)")
+            else:
+                send_message(chat_id, f"❌ Позывной '{callsign}' не найден")
             return
-        parts = text.split(maxsplit=1)
-        if len(parts) < 2:
-            send_message(chat_id, "Используй: /del_callsign <позывной>")
-            return
-        callsign = parts[1].strip()
-        deleted = delete_callsign_by_name(callsign)
-        if deleted > 0:
-            send_message(chat_id, f"✅ Удалён позывной: {callsign} ({deleted} записей)")
-        else:
-            send_message(chat_id, f"❌ Позывной '{callsign}' не найден")
-        return
 
-    if text.startswith('/add_external'):
-        if not is_main_admin:
-            send_message(chat_id, "❌ Только главный админ")
+        if text.startswith('/add_external'):
+            if not is_admin:
+                send_message(chat_id, "❌ Только админы могут управлять внешними позывными")
+                return
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                send_message(chat_id, "Используй: /add_external <позывной>")
+                return
+            callsign = parts[1].strip().lower()
+            if add_external_callsign(callsign):
+                logger.info(f"Админ {user_id} добавил внешний позывной: {callsign}")
+                send_message(chat_id, f"✅ Добавлен внешний позывной: {callsign}")
+            else:
+                send_message(chat_id, f"ℹ️ Позывной {callsign} уже в списке")
             return
-        parts = text.split(maxsplit=1)
-        if len(parts) < 2:
-            send_message(chat_id, "Используй: /add_external <позывной>")
-            return
-        callsign = parts[1].strip().lower()
-        if add_external_callsign(callsign):
-            send_message(chat_id, f"✅ Добавлен внешний позывной: {callsign}")
-        else:
-            send_message(chat_id, f"ℹ️ Позывной {callsign} уже в списке")
-        return
 
-    if text.startswith('/del_external'):
-        if not is_main_admin:
-            send_message(chat_id, "❌ Только главный админ")
-            return
-        parts = text.split(maxsplit=1)
-        if len(parts) < 2:
-            send_message(chat_id, "Используй: /del_external <позывной>")
-            return
-        callsign = parts[1].strip().lower()
-        if remove_external_callsign(callsign):
-            send_message(chat_id, f"✅ Удалён внешний позывной: {callsign}")
-        else:
-            send_message(chat_id, f"❌ Позывной '{callsign}' не найден")
-        return
+        if text.startswith('/del_external'):
+            if not is_admin:
+                send_message(chat_id, "❌ Только админы могут управлять внешними позывными")
+                return
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                send_message(chat_id, "Используй: /del_external <позывной>")
+                return
+            callsign = parts[1].strip().lower()
+            if remove_external_callsign(callsign):
+                logger.info(f"Админ {user_id} удалил внешний позывной: {callsign}")
+                send_message(chat_id, f"✅ Удалён внешний позывной: {callsign}")
+            else:
+                send_message(chat_id, f"❌ Позывной '{callsign}' не найден")
+            return    
 
-    if text.startswith('/add_admin'):
-        if not is_main_admin:
-            send_message(chat_id, "❌ Только главный админ может добавлять админов")
+        # === ТОЛЬКО ID_MAIN: управление самими админами ===
+        # Это оставляем строго для главного админа, чтобы нельзя было массово лишить всех прав
+        if text.startswith('/add_admin'):
+            if not is_main_admin:
+                send_message(chat_id, "❌ Только главный админ может назначать админов")
+                return
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                send_message(chat_id, "Используй: /add_admin <позывной>")
+                return
+            callsign = parts[1].strip()
+            target_user_id = get_user_id_by_callsign(callsign)
+            if target_user_id is None:
+                send_message(chat_id, f"❌ Позывной '{callsign}' не найден в базе")
+                return
+            if target_user_id == user_id and not is_main_admin:
+                send_message(chat_id, "❌ Нельзя назначить админом самого себя")
+                return
+            if add_admin(target_user_id):
+                logger.info(f"ID_MAIN {user_id} назначил админом: {target_user_id}")
+                send_message(chat_id, f"✅ Добавлен админ: {callsign} (id: {target_user_id})")
+            else:
+                send_message(chat_id, f"ℹ️ {callsign} уже админ")
             return
-        parts = text.split(maxsplit=1)
-        if len(parts) < 2:
-            send_message(chat_id, "Используй: /add_admin <позывной>")
-            return
-        callsign = parts[1].strip()
-        target_user_id = get_user_id_by_callsign(callsign)
-        if target_user_id is None:
-            send_message(chat_id, f"❌ Позывной '{callsign}' не найден в базе")
-            return
-        if add_admin(target_user_id):
-            send_message(chat_id, f"✅ Добавлен админ: {callsign} (id: {target_user_id})")
-        else:
-            send_message(chat_id, f"ℹ️ {callsign} уже админ")
-        return
 
-    if text.startswith('/del_admin'):
-        if not is_main_admin:
-            send_message(chat_id, "❌ Только главный админ может удалять админов")
-            return
-        parts = text.split(maxsplit=1)
-        if len(parts) < 2:
-            send_message(chat_id, "Используй: /del_admin <позывной>")
-            return
-        callsign = parts[1].strip()
-        target_user_id = get_user_id_by_callsign(callsign)
-        if target_user_id is None:
-            send_message(chat_id, f"❌ Позывной '{callsign}' не найден в базе")
-            return
-        if remove_admin(target_user_id):
-            send_message(chat_id, f"✅ Удалён админ: {callsign} (id: {target_user_id})")
-        else:
-            send_message(chat_id, f"❌ {callsign} нельзя удалить (главный админ или не найден в bot_admins)")
-        return
+        if text.startswith('/del_admin'):
+            if not is_main_admin:
+                send_message(chat_id, "❌ Только главный админ может удалять админов")
+                return
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                send_message(chat_id, "Используй: /del_admin <позывной>")
+                return
+            callsign = parts[1].strip()
+            target_user_id = get_user_id_by_callsign(callsign)
+            if target_user_id is None:
+                send_message(chat_id, f"❌ Позывной '{callsign}' не найден в базе")
+                return
+            if target_user_id == user_id and not is_main_admin:
+                send_message(chat_id, "❌ Нельзя удалить самого себя из админов")
+                return
+            if remove_admin(target_user_id):
+                logger.info(f"ID_MAIN {user_id} удалил админа: {target_user_id}")
+                send_message(chat_id, f"✅ Удалён админ: {callsign} (id: {target_user_id})")
+            else:
+                send_message(chat_id, f"❌ {callsign} нельзя удалить")
+            return    
+    
 
     # --- Обычные команды ---
     if text == '/start':
