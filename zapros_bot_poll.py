@@ -45,6 +45,7 @@ def init_db():
             poll_id        TEXT PRIMARY KEY,
             message_id    BIGINT NOT NULL,
             chat_id        BIGINT NOT NULL,
+            creator_id     BIGINT NOT NULL,
             question       TEXT,
             duration_days  INT,
             created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -120,14 +121,14 @@ def db_health_check():
         return False
 
 
-def save_poll_to_db(poll_id, message_id, chat_id, question, duration_days):
+def save_poll_to_db(poll_id, message_id, chat_id, question, duration_days, creator_id):
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO polls (poll_id, message_id, chat_id, question, duration_days)
+        INSERT INTO polls (poll_id, message_id, chat_id, question, duration_days, creator_id)
         VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT (poll_id) DO NOTHING;
-    """, (poll_id, message_id, chat_id, question, duration_days))
+    """, (poll_id, message_id, chat_id, question, duration_days, creator_id))
     conn.commit()
     cur.close()
     conn.close()
@@ -151,8 +152,9 @@ def get_poll_from_db(poll_id):
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT message_id, chat_id, question, duration_days, created_at, closed
-        FROM polls WHERE poll_id = %s;
+        SELECT message_id, chat_id, question, duration_days, created_at, closed, creator_id
+        FROM polls 
+        WHERE poll_id = %s;
     """, (poll_id,))
     row = cur.fetchone()
     cur.close()
@@ -182,7 +184,7 @@ def get_voted_user_ids(poll_id):
 def restore_pending_polls():
     conn = get_db_conn()
     cur = conn.cursor()
-    cur.execute("SELECT poll_id, message_id, chat_id, question, duration_days, created_at FROM polls WHERE closed = FALSE;")
+    cur.execute("SELECT poll_id, message_id, chat_id, question, duration_days, created_at, creator_id FROM polls WHERE closed = FALSE;")
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -194,7 +196,7 @@ def restore_pending_polls():
     logger.info(f"Найдено {len(rows)} незакрытых опросов, восстанавливаем...")
 
     for row in rows:
-        poll_id, message_id, chat_id, question, duration_days, created_at = row
+        poll_id, message_id, chat_id, question, duration_days, created_at, creator_id = row
 
         elapsed = (time.time() - created_at.timestamp())
         total_duration = duration_days * 24 * 60 * 60
@@ -417,8 +419,17 @@ def send_poll(question, options, duration_days):
         if poll_result.get('ok'):
             poll_message_id = poll_result['result']['message_id']
             poll_id = poll_result['result']['poll']['id']
+            user_id = message['from']['id']
+            
+            save_poll_to_db(
+                poll_id=poll_id,
+                message_id=poll_message_id,
+                chat_id=chat_id,
+                question=question,
+                duration_days=duration_days,
+                creator_id=user_id
+                )
 
-            save_poll_to_db(poll_id, poll_message_id, GROUP_ID, question, duration_days)
 
             logger.info(f"Опрос отправлен, message_id: {poll_message_id}, poll_id: {poll_id}")
 
@@ -501,45 +512,64 @@ def get_missing_voters_list(poll_id):
 
 
 def send_post_closure_notifications(poll_id):
-    logger.info(f"Отправка уведомлений для опроса {poll_id}")
+    logger.info(f"Начало обработки уведомлений для опроса {poll_id}")
 
     try:
         missing_values = get_missing_voters_list(poll_id)
         external = get_external_callsigns()
 
-        if not missing_values and not external:
-            logger.info(f"Все проголосовали в опросе {poll_id}, уведомления не нужны")
-            return
-
-        logger.info(f"Отправляем уведомления {len(missing_values)} пользователям")
-
+        # --- Блок массовой рассылки (только тем, кто не голосовал) ---
         all_callsigns = get_all_callsigns()
         voted_ids = get_voted_user_ids(poll_id)
         all_user_ids = set(all_callsigns.keys())
         missing_ids = list(all_user_ids - voted_ids)
 
-        message_text = (
-            "📣 Опрос завершён!\n\n"
-            "К сожалению, вы не приняли участие в голосовании в moto.\n\n"
-            "Это нарушение правил.\n"
-            "Зайди в чат дружины, будь с нами и напиши админу!"
-        )
+        if missing_ids:
+            message_text = (
+                "📣 Опрос завершён!\n\n"
+                "К сожалению, вы не приняли участие в голосовании в moto.\n\n"
+                "Это нарушение правил.\n"
+                "Зайди в чат дружины, будь с нами и напиши админу!"
+            )
 
-        sent_count = 0
-        failed_count = 0
+            sent_count = 0
+            failed_count = 0
 
-        for user_id in missing_ids:
-            try:
-                send_message(user_id, message_text)
-                sent_count += 1
-                time.sleep(0.1)
-            except Exception as e:
-                logger.error(f"Ошибка отправки уведомления пользователю {user_id}: {e}")
-                failed_count += 1
+            for user_id in missing_ids:
+                try:
+                    send_message(user_id, message_text)
+                    sent_count += 1
+                    time.sleep(0.1)  # Анти-спам от Telegram
+                except Exception as e:
+                    logger.error(f"Ошибка отправки уведомления пользователю {user_id}: {e}")
+                    failed_count += 1
 
-        logger.info(f"Уведомления: отправлено {sent_count}, ошибок {failed_count} (опрос {poll_id})")
-        
-        # --- Сообщение главному админу со списком ---
+            logger.info(f"Массовая рассылка: отправлено {sent_count}, ошибок {failed_count} (опрос {poll_id})")
+        else:
+            logger.info(f"Все пользователи проголосовали в опросе {poll_id}, массовая рассылка не нужна")
+
+        # --- Отправка отчёта админам (вынесена отдельно) ---
+        # Даже если массовая рассылка не была нужна, отчёт админам может быть важен
+        send_admin_report_for_poll(poll_id, missing_values, external)
+
+    except Exception as e:
+        logger.error(f"Критическая ошибка в send_post_closure_notifications для {poll_id}: {e}", exc_info=True)
+    
+    
+def send_admin_report_for_poll(poll_id, missing_values, external):
+    """Отправляет итоговый отчёт ID_MAIN и создателю опроса."""
+    # 1. Получаем creator_id из БД
+    conn = get_db_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT creator_id, closed FROM polls WHERE poll_id = %s;", (poll_id,))
+        row = cur.fetchone()
+        if not row:
+            logger.warning(f"Опрос {poll_id} не найден при формировании отчёта")
+            return False
+        creator_id, is_closed = row
+
+        # 2. Формируем текст
         parts = []
         if missing_values:
             parts.append(f"Не проголосовало: {len(missing_values)}\n" +
@@ -549,8 +579,20 @@ def send_post_closure_notifications(poll_id):
                          "\n".join(f"• {c}" for c in external))
 
         admin_text = f"📋 Опрос {poll_id} завершён.\n\n" + "\n\n".join(parts)
+
+        # 3. Отправляем
         send_message(int(ID_MAIN), admin_text)
-               
+        send_message(creator_id, admin_text)
+
+        logger.info(f"Отчёт по опросу {poll_id} отправлен: ID_MAIN и creator_id={creator_id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Ошибка отправки отчёта админам для опроса {poll_id}: {e}", exc_info=True)
+        return False
+    finally:
+        cur.close()
+        conn.close()
 
         # --- Создаём TXT и отправляем админу ---
         output_path = f'/app/data/txt_results/missing_{poll_id}.txt'
@@ -622,6 +664,7 @@ def start_poll_creation(chat_id):
     user_states[chat_id] = {
         'state': 'waiting_question',
         'created_at': time.time(),
+        'creator_id': chat_id,          # <-- важно: автор опроса
         'question': None,
         'options': [],
         'duration_days': None
