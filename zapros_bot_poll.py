@@ -594,57 +594,7 @@ def send_admin_report_for_poll(poll_id, missing_values, external):
         cur.close()
         conn.close()
 
-        # --- Создаём TXT и отправляем админу ---
-        output_path = f'/app/data/txt_results/missing_{poll_id}.txt'
-        if generate_missing_voters_txt(poll_id, output_path):
-            send_document(int(ID_MAIN), output_path, caption=f"📋 Не проголосовавшие (опрос {poll_id})")
-            logger.info(f"TXT отправлен админу: {output_path}")
-
-    except Exception as e:
-        logger.error(f"Критическая ошибка при отправке уведомлений для опроса {poll_id}: {e}")
-
-
-def generate_missing_voters_txt(poll_id, output_txt_path):
-    try:
-        missing_values = get_missing_voters_list(poll_id)
-        external = get_external_callsigns()
-
-        if not missing_values and not external:
-            logger.info(f"Все проголосовали (опрос {poll_id}), TXT не создаётся")
-            return False
-
-        lines = [
-            f"Список по опросу {poll_id}",
-            "=" * 40,
-        ]
-
-        if missing_values:
-            lines.append(f"Не проголосовало: {len(missing_values)} человек")
-            lines.append("-" * 40)
-            lines.extend(f"  {c}" for c in missing_values)
-
-        if external:
-            lines.append("")
-            lines.append(f"Не прислали позывной в бот: {len(external)} человек")
-            lines.append("-" * 40)
-            lines.extend(f"  {c}" for c in external)
-
-        lines.append("=" * 40)
-
-        os.makedirs('/app/data/txt_results', exist_ok=True)
-        with open(output_txt_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
-
-        logger.info(f"TXT создан: {output_txt_path} "
-                     f"(не проголосовало: {len(missing_values)}, "
-                     f"внешних: {len(external)})")
-        return True
-
-    except Exception as e:
-        logger.error(f"Ошибка при создании TXT для опроса {poll_id}: {e}")
-        return False
-
-    
+            
 # ============================================================
 #  ПОЛУЧЕНИЕ ОБНОВЛЕНИЙ И ДИАЛОГ
 # ============================================================
