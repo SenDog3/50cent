@@ -6,6 +6,9 @@ import time
 import threading
 import psycopg2
 
+print("🔍 ДИАГНОСТИКА: ЗАПУЩЕН zapros_bot_poll.py")
+
+
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
