@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 # Константы
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ID_MAIN = os.getenv('ID_MAIN')
-GROUP_ID = os.getenv('group_id_moto')
-thread_id = 42
+GROUP_ID = os.getenv('GROUP_ID') # group_id_moto - исправить в переменных
+thread_id = os.getenv('THREAD_ID') # для мото 42 - исправить в переменных
 
 BASE_URL = f'https://api.telegram.org/bot{BOT_TOKEN}'
 
