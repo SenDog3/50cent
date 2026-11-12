@@ -8,6 +8,8 @@ import psycopg2
 
 print("🔍 ДИАГНОСТИКА: ЗАПУЩЕН zapros_bot_poll.py")
 
+print(f"TRY SEND: chat_id={GROUP_ID!r} (type={type(GROUP_ID).__name__}), thread={thread_id!r}")
+
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
