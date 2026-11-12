@@ -6,7 +6,7 @@ import time
 import threading
 import psycopg2
 
-print("🔍 ДИАГНОСТИКА: ЗАПУЩЕН zapros_bot_poll.py")
+print("🔍 ДИАГНОСТИКА: ЗАПУЩЕН zapros_bot_poll.py", flush=True)
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +18,7 @@ ID_MAIN = os.getenv('ID_MAIN')
 GROUP_ID = os.getenv('GROUP_ID') # group_id_moto - исправить в переменных
 thread_id = os.getenv('THREAD_ID') # для мото 42 - исправить в переменных
 
-print(f"TRY SEND: chat_id={GROUP_ID!r} (type={type(GROUP_ID).__name__}), thread={thread_id!r}")
+logger.info(f"TRY SEND: chat_id={GROUP_ID!r} (type={type(GROUP_ID).__name__}), thread={thread_id!r}")
 
 BASE_URL = f'https://api.telegram.org/bot{BOT_TOKEN}'
 
